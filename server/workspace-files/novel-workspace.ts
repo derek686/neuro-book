@@ -33,6 +33,17 @@ const USER_VARIABLE_DEFINITION_ROOT = path.join(USER_NBOOK_ABSOLUTE_ROOT, "agent
 const USER_SYSTEM_ASSETS_SYNC_STATE_PATH = path.join(USER_NBOOK_ABSOLUTE_ROOT, ".system-assets-sync-state.json");
 const PROJECT_DIRECTORY_TEMPLATE_ROOT = path.join(SYSTEM_NBOOK_ROOT, "templates", "project-directory-templates");
 const USER_PROJECT_DIRECTORY_TEMPLATE_ROOT = path.join(USER_NBOOK_ABSOLUTE_ROOT, "templates", "project-directory-templates");
+const DELETED_MANAGED_SYSTEM_ASSET_PATHS = new Set([
+    "templates/project-directory-templates/lorebook/context/director.md",
+    "templates/project-directory-templates/lorebook/context/generated/.gitkeep",
+    "templates/project-directory-templates/lorebook/context/leader.default.md",
+    "templates/project-directory-templates/lorebook/context/simulator.leader.md",
+    "templates/project-directory-templates/lorebook/context/writer.md",
+    "templates/project-directory-templates/simulation/cast.yaml",
+    "templates/project-directory-templates/simulation/config.yaml",
+    "templates/project-directory-templates/simulation/simulator.md",
+    "templates/project-directory-templates/simulation/writer.md",
+]);
 const PROJECT_MANIFEST_FILE = "project.yaml";
 const LEGACY_WORKSPACE_MANIFEST_FILE = "workspace.yaml";
 const USER_ASSETS_DIFF_MAX_BYTES = 512 * 1024;
@@ -321,6 +332,7 @@ async function normalizeNovelDirectoryTemplateArtifacts(templateRoot: string): P
 async function syncManagedSystemAssetsToUserAssets(result: UserAssetsSyncResult): Promise<void> {
     const syncState = await readUserSystemAssetsSyncState();
     const assets = await listManagedSystemAssets();
+    const activeAssetPaths = new Set(assets.map((asset) => asset.assetPath));
     let stateChanged = false;
     for (const item of assets) {
         const systemPath = resolveInsideRoot(SYSTEM_NBOOK_ROOT, item.assetPath);
@@ -374,9 +386,37 @@ async function syncManagedSystemAssetsToUserAssets(result: UserAssetsSyncResult)
         result.updatedAssets = (result.updatedAssets ?? 0) + 1;
         stateChanged = true;
     }
+    stateChanged = await removeDeletedManagedSystemAssets(syncState, activeAssetPaths, result) || stateChanged;
     if (stateChanged) {
         await writeUserSystemAssetsSyncState(syncState);
     }
+}
+
+async function removeDeletedManagedSystemAssets(syncState: UserSystemAssetsSyncState, activeAssetPaths: Set<string>, result: UserAssetsSyncResult): Promise<boolean> {
+    let changed = false;
+    for (const item of [...syncState.assets ?? []]) {
+        if (activeAssetPaths.has(item.assetPath) || !DELETED_MANAGED_SYSTEM_ASSET_PATHS.has(item.assetPath)) {
+            continue;
+        }
+        const userPath = resolveInsideRoot(USER_NBOOK_ABSOLUTE_ROOT, item.assetPath);
+        if (!await pathExists(userPath)) {
+            removeUserAssetSyncState(syncState, item.assetPath);
+            changed = true;
+            continue;
+        }
+        const currentUserHash = (await sha256File(userPath)).sha256;
+        if (currentUserHash === item.lastSyncedUserHash) {
+            await fs.rm(userPath, {force: true});
+            removeUserAssetSyncState(syncState, item.assetPath);
+            changed = true;
+            continue;
+        }
+        result.assetWarnings?.push({
+            assetPath: item.assetPath,
+            message: "系统 .nbook asset 已删除，但用户覆盖已手改，未自动删除。",
+        });
+    }
+    return changed;
 }
 
 async function syncSystemProfilesToUserAssets(result: UserAssetsSyncResult): Promise<void> {
@@ -924,6 +964,10 @@ function upsertUserAssetSyncState(syncState: UserSystemAssetsSyncState, metadata
         syncState.assets.push(next);
     }
     syncState.assets.sort((left, right) => left.assetPath.localeCompare(right.assetPath));
+}
+
+function removeUserAssetSyncState(syncState: UserSystemAssetsSyncState, assetPath: string): void {
+    syncState.assets = (syncState.assets ?? []).filter((item) => item.assetPath !== assetPath);
 }
 
 function findUserAssetSyncState(syncState: UserSystemAssetsSyncState, assetPath: string): UserAssetSyncStateItem | undefined {

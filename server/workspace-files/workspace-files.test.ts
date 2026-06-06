@@ -1510,6 +1510,68 @@ describe("workspace-files", () => {
         }
     });
 
+    it("同步系统 assets 会清理未手改的已删除上游模板并保留手改副本", async () => {
+        const deletedAssetPath = "templates/project-directory-templates/simulation/config.yaml";
+        const editedDeletedAssetPath = "templates/project-directory-templates/simulation/writer.md";
+        const deletedUserPath = path.join("workspace", ".nbook", ...deletedAssetPath.split("/"));
+        const editedUserPath = path.join("workspace", ".nbook", ...editedDeletedAssetPath.split("/"));
+        const deletedSystemPath = path.join("assets", "workspace", ".nbook", ...deletedAssetPath.split("/"));
+        const editedSystemPath = path.join("assets", "workspace", ".nbook", ...editedDeletedAssetPath.split("/"));
+        const syncStatePath = path.join("workspace", ".nbook", ".system-assets-sync-state.json");
+        const deletedBackup = await backupOptionalFile(deletedUserPath);
+        const editedBackup = await backupOptionalFile(editedUserPath);
+        const syncStateBackup = await backupOptionalFile(syncStatePath);
+        const syncedContent = "old system template\n";
+        const editedContent = "old system template\nuser edit\n";
+        const syncedHash = createHash("sha256").update(syncedContent).digest("hex");
+        const editedHash = createHash("sha256").update(editedContent).digest("hex");
+
+        try {
+            await expect(fs.access(deletedSystemPath)).rejects.toMatchObject({code: "ENOENT"});
+            await expect(fs.access(editedSystemPath)).rejects.toMatchObject({code: "ENOENT"});
+            await fs.mkdir(path.dirname(deletedUserPath), {recursive: true});
+            await fs.mkdir(path.dirname(editedUserPath), {recursive: true});
+            await fs.writeFile(deletedUserPath, syncedContent, "utf-8");
+            await fs.writeFile(editedUserPath, editedContent, "utf-8");
+            await fs.writeFile(syncStatePath, JSON.stringify({
+                profiles: [],
+                assets: [
+                    {
+                        assetPath: deletedAssetPath,
+                        upstreamHash: syncedHash,
+                        lastSyncedUserHash: syncedHash,
+                        syncedAt: new Date(0).toISOString(),
+                    },
+                    {
+                        assetPath: editedDeletedAssetPath,
+                        upstreamHash: syncedHash,
+                        lastSyncedUserHash: syncedHash,
+                        syncedAt: new Date(0).toISOString(),
+                    },
+                ],
+            }, null, 2), "utf-8");
+
+            const result = await syncSystemAssetsToUserAssets();
+            const syncState = JSON.parse(await fs.readFile(syncStatePath, "utf-8")) as {assets?: Array<{assetPath: string; lastSyncedUserHash?: string}>};
+            const assetPaths = syncState.assets?.map((asset) => asset.assetPath) ?? [];
+
+            await expect(fs.access(deletedUserPath)).rejects.toMatchObject({code: "ENOENT"});
+            await expect(fs.readFile(editedUserPath, "utf-8")).resolves.toBe(editedContent);
+            expect(assetPaths).not.toContain(deletedAssetPath);
+            expect(syncState.assets).toEqual(expect.arrayContaining([
+                expect.objectContaining({assetPath: editedDeletedAssetPath, lastSyncedUserHash: syncedHash}),
+            ]));
+            expect(result.assetWarnings).toEqual(expect.arrayContaining([
+                expect.objectContaining({assetPath: editedDeletedAssetPath}),
+            ]));
+            expect(await sha256ForTest(editedUserPath)).toBe(editedHash);
+        } finally {
+            await restoreOptionalFile(deletedUserPath, deletedBackup);
+            await restoreOptionalFile(editedUserPath, editedBackup);
+            await restoreOptionalFile(syncStatePath, syncStateBackup);
+        }
+    });
+
     it("同步系统 assets 会更新仍跟随上游的 Agent skill", async () => {
         const assetPath = "agent/skills/profile-system-guide/SKILL.md";
         const userSkillPath = path.join("workspace", ".nbook", ...assetPath.split("/"));
