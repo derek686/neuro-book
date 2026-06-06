@@ -1,12 +1,12 @@
 defaultPlayerActor: player
-defaultActorProfile: rp.actor
+defaultActorProfile: simulator.actor
 defaultWriterProfile: rp.writer
 
 subjects:
   - id: player
     name: 玩家角色
     kind: player
-    profile: rp.actor
+    profile: simulator.actor
     instruction: simulation/subjects/player/subject.md
     events: simulation/subjects/player/events.md
     knowledge: simulation/subjects/player/knowledge.md
@@ -19,7 +19,7 @@ subjects:
   - id: sample-npc
     name: 示例 NPC
     kind: npc
-    profile: rp.actor
+    profile: simulator.actor
     instruction: simulation/subjects/sample-npc/subject.md
     events: simulation/subjects/sample-npc/events.md
     knowledge: simulation/subjects/sample-npc/knowledge.md

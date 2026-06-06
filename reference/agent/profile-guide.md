@@ -7,7 +7,7 @@
 - [harness.md](harness.md)
 - [context.md](context.md)
 - [profile-import.md](profile-import.md)
-- [neurobook-project-guide.md](neurobook-project-guide.md)
+- [project-workspace-guide.md](project-workspace-guide.md)
 
 ## Profile Definition
 
@@ -26,7 +26,7 @@
 - `leader.default.profile.tsx`
 - `writer.profile.tsx`
 - `retrieval.profile.tsx`
-- `leader.rp.profile.tsx`
+- `simulator.leader.profile.tsx`
 - `simulator.actor.profile.tsx`
 - `rp.writer.profile.tsx`
 
@@ -64,7 +64,7 @@ context() {
                     <SkillCatalog />
                 </Message>
                 <Message>
-                    <Import path="reference/agent/neurobook-project-guide.md" />
+                    <Import path="reference/agent/project-workspace-guide.md" />
                 </Message>
             </HistorySet>
             <ModelContext>
@@ -119,7 +119,7 @@ context() {
 
 - 可用 agent catalog。
 - 可用 skill catalog。
-- 共享规范导入，例如 `<Import path="reference/agent/neurobook-project-guide.md" />`。
+- 共享规范导入，例如 `<Import path="reference/agent/project-workspace-guide.md" />`。
 - 需要首轮持久化、后续不频繁变化的上下文。
 
 规则：
@@ -137,7 +137,7 @@ context() {
 ```tsx
 <HistorySet>
     <Message>
-        <Import path="reference/agent/neurobook-project-guide.md" />
+        <Import path="reference/agent/project-workspace-guide.md" />
     </Message>
 </HistorySet>
 ```
@@ -262,7 +262,7 @@ export default defineAgentProfile({
                         <SkillCatalog />
                     </Message>
                     <Message>
-                        <Import path="reference/agent/neurobook-project-guide.md" />
+                        <Import path="reference/agent/project-workspace-guide.md" />
                     </Message>
                 </HistorySet>
                 <ModelContext>

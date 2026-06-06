@@ -3,12 +3,12 @@ import {mkdir, readFile, rm, writeFile} from "node:fs/promises";
 import {randomUUID} from "node:crypto";
 import {describe, expect, it} from "vitest";
 import {parse as parseYaml} from "yaml";
-import leaderRpProfile from "../../../assets/workspace/.nbook/agent/profiles/builtin/leader.rp.profile";
 import rpWriterProfile from "../../../assets/workspace/.nbook/agent/profiles/builtin/rp.writer.profile";
 import simulatorActorProfile from "../../../assets/workspace/.nbook/agent/profiles/builtin/simulator.actor.profile";
+import simulatorLeaderProfile from "../../../assets/workspace/.nbook/agent/profiles/builtin/simulator.leader.profile";
 import {AgentProfileCatalog} from "nbook/server/agent/profiles/catalog";
 import {defaultAgentProfile} from "nbook/server/agent/profiles/default-profile";
-import {LeaderRpInputSchema, RpWriterInputSchema, RpWriterOutputSchema, SubjectSimulatorInputSchema, SubjectSimulatorOutputSchema} from "nbook/server/agent/profiles/builtin-contracts";
+import {RpWriterInputSchema, RpWriterOutputSchema, SimulatorLeaderInputSchema, SubjectSimulatorInputSchema, SubjectSimulatorOutputSchema} from "nbook/server/agent/profiles/builtin-contracts";
 import {messageText} from "nbook/server/agent/messages/message-utils";
 import type {AgentMessage, Message} from "nbook/server/agent/messages/types";
 import type {RuntimeSessionFacade} from "nbook/server/agent/profiles/define-agent-runtime";
@@ -27,7 +27,7 @@ function messagesText(messages: Array<Message | AgentMessage> | undefined): stri
 }
 
 describe("RP builtin profiles", () => {
-    it("catalog 加载 leader.rp、simulator.actor、rp.writer", async () => {
+    it("catalog 加载 simulator.leader、simulator.actor、rp.writer，不再加载 leader.rp", async () => {
         const catalog = new AgentProfileCatalog(
             resolve("assets", "workspace", ".nbook", "agent", "profiles"),
             resolve(".agent", "missing-user-profiles"),
@@ -36,13 +36,16 @@ describe("RP builtin profiles", () => {
         const snapshot = await catalog.snapshot();
         const profileKeys = snapshot.profiles.map((profile) => profile.key);
 
-        expect(profileKeys).toContain("leader.rp");
+        expect(profileKeys).toContain("simulator.leader");
         expect(profileKeys).toContain("simulator.actor");
         expect(profileKeys).toContain("rp.writer");
+        expect(profileKeys).not.toContain("leader.rp");
     }, 20_000);
 
     it("rp contracts 使用 RP 专用输入输出，不复用普通 writer chapterPaths", () => {
-        expect(LeaderRpInputSchema.properties).toHaveProperty("simulationRoot");
+        expect(SimulatorLeaderInputSchema.properties).toHaveProperty("projectPath");
+        expect(SimulatorLeaderInputSchema.properties).toHaveProperty("simulationRoot");
+        expect(SimulatorLeaderInputSchema.properties).not.toHaveProperty("mode");
 
         expect(SubjectSimulatorInputSchema.properties).toHaveProperty("actorId");
         expect(SubjectSimulatorInputSchema.properties).toHaveProperty("instructionPath");
@@ -50,12 +53,11 @@ describe("RP builtin profiles", () => {
         expect(SubjectSimulatorInputSchema.properties).toHaveProperty("knowledgePath");
         expect(SubjectSimulatorInputSchema.properties).toHaveProperty("mindPath");
         expect(SubjectSimulatorInputSchema.properties).toHaveProperty("statePath");
-        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("visible_action");
+        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("visible_response");
         expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("spoken_dialogue");
-        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("event_update");
-        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("knowledge_update");
-        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("mind_update");
-        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("state_update");
+        expect(SubjectSimulatorOutputSchema.properties).toHaveProperty("inner_response");
+        expect(SubjectSimulatorOutputSchema.properties).not.toHaveProperty("updates");
+        expect(SubjectSimulatorOutputSchema.properties).not.toHaveProperty("questions");
 
         expect(RpWriterInputSchema.properties).toHaveProperty("writerInstructionPath");
         expect(RpWriterInputSchema.properties).not.toHaveProperty("chapterPaths");
@@ -65,10 +67,10 @@ describe("RP builtin profiles", () => {
         expect(RpWriterOutputSchema.properties).not.toHaveProperty("summary");
     });
 
-    it("leader.rp 注入 GM 流程、agent catalog 和 RP 工具边界", async () => {
-        const prepared = await leaderRpProfile.prepare!({
+    it("simulator.leader 作为 RP / simulation 入口并负责调度 actor", async () => {
+        const prepared = await simulatorLeaderProfile.prepare!({
             session: testSession({
-                profileKey: "leader.rp",
+                profileKey: "simulator.leader",
                 workspaceRoot: resolve("workspace"),
                 customState: {},
                 linkedAgents: [],
@@ -76,88 +78,31 @@ describe("RP builtin profiles", () => {
                 planModeActive: false,
             }),
             input: {
-                simulationRoot: "rp-project/simulation",
+                projectPath: "workspace/rp-project",
+                simulationRoot: "rp-project/simulation/",
             },
-            vars: createTestVariableAccessor({
-                "client.currentProjectWorkspace": "workspace/rp-project",
-            }),
-            catalog: {
-                profiles: [{
-                    key: "simulator.actor",
-                    name: "Subject Simulator",
-                    description: "通用角色扮演 agent",
-                    allowedToolKeys: ["read", "write", "edit", "report_result"],
-                    inputSchema: SubjectSimulatorInputSchema,
-                    outputSchema: SubjectSimulatorOutputSchema,
-                    source: "system",
-                    builtin: true,
-                    loadStatus: "loaded",
-                }, {
-                    key: "rp.writer",
-                    name: "RP Writer",
-                    description: "RP Tick 正文渲染 agent",
-                    allowedToolKeys: ["read", "write", "edit", "bash"],
-                    inputSchema: RpWriterInputSchema,
-                    outputSchema: RpWriterOutputSchema,
-                    source: "system",
-                    builtin: true,
-                    loadStatus: "loaded",
-                }],
-                issues: [],
-            },
+            vars: createTestVariableAccessor(),
+            catalog: {profiles: [], issues: []},
             skills: [],
         });
         const systemPrompt = prepared.systemPrompt ?? "";
         const historyText = messagesText(prepared.historyInitMessages);
         const modelContextText = messagesText(prepared.modelContextMessages);
-        const appendingText = messagesText(prepared.appendingMessages);
 
-        expect(leaderRpProfile.allowedToolKeys).toEqual([
-            "read",
-            "write",
-            "edit",
-            "bash",
-            "create_agent",
-            "invoke_agent",
-            "get_agent",
-            "get_agent_profile",
-            "get_session",
-            "request_user_input",
-        ]);
-        expect(systemPrompt).toContain("simulator leader");
-        expect(systemPrompt).toContain("simulation/config.yaml");
-        expect(systemPrompt).toContain("simulation/cast.yaml");
-        expect(systemPrompt).toContain("simulation/simulator.md 是唯一 simulator leader 入口说明");
-        expect(systemPrompt).toContain("actor-facing message");
-        expect(systemPrompt).toContain("GM internal scratch");
-        expect(systemPrompt).toContain("不要把 not_known_to_you");
-        expect(systemPrompt).toContain("writer brief");
-        expect(systemPrompt).toContain("rp.writer");
-        expect(systemPrompt).toContain("不要把 GM scratch");
-        expect(systemPrompt).toContain("mindPath");
-        expect(systemPrompt).toContain("eventsPath");
-        expect(systemPrompt).toContain("simulation/entities");
-        expect(systemPrompt).toContain("report.md + prose.md");
-        expect(systemPrompt).toContain("prose.md 保存用户最终看到的正文");
-        expect(systemPrompt).toContain("subject state.md");
-        expect(systemPrompt).toContain("普通 assistant 回复");
-        expect(systemPrompt).toContain("需要选项时由你输出");
-        expect(systemPrompt).toContain("不要输出 packet、YAML、JSON");
-        expect(systemPrompt).toContain("最多 2-4 个");
-        expect(systemPrompt).toContain("Project Workspace 相对路径");
-        expect(systemPrompt).toContain("instruction -> instructionPath");
-        expect(systemPrompt).toContain("events -> eventsPath");
-        expect(systemPrompt).toContain("knowledge -> knowledgePath");
-        expect(systemPrompt).toContain("mind -> mindPath");
-        expect(systemPrompt).toContain("state -> statePath");
-        expect(historyText).toContain("simulator.actor");
-        expect(historyText).toContain("rp.writer");
+        expect(simulatorLeaderProfile.allowedToolKeys).toContain("create_agent");
+        expect(simulatorLeaderProfile.allowedToolKeys).toContain("invoke_agent");
+        expect(systemPrompt).toContain("世界模拟主管");
+        expect(systemPrompt).toContain("AGENTS.md 与 simulation/simulator.md");
+        expect(systemPrompt).toContain("leader.default 和用户入口通常只与你交流");
+        expect(systemPrompt).toContain("为需要模拟的 subject 创建或复用 simulator.actor");
+        expect(systemPrompt).toContain("新建 subject 或 entity");
+        expect(systemPrompt).toContain("全自动下一 tick");
         expect(historyText).toContain("```AGENTS.md");
-        expect(modelContextText).toContain("simulationRoot: rp-project/simulation");
-        expect(appendingText).toContain("Current Project Workspace: workspace/rp-project");
+        expect(modelContextText).toContain("projectPath: workspace/rp-project");
+        expect(modelContextText).toContain("mode: 每轮任务 prompt 指定");
     });
 
-    it("simulator.actor 自动注入 subject.md、events.md、knowledge.md、mind.md 与 state.md，并把文件维护交给 sidecar", async () => {
+    it("simulator.actor 主路只注入 actor binding，subject 文件由 sidecar 加载", async () => {
         const fixture = await createRoleplayFixture();
         try {
             const prepared = await simulatorActorProfile.prepare!({
@@ -231,10 +176,9 @@ describe("RP builtin profiles", () => {
                         reportResult: {
                             result: "ok",
                             data: {
-                                event_update: "她收到了一条新消息。",
-                                knowledge_update: "",
-                                mind_update: "",
-                                state_update: "她向后退了一步。",
+                                visible_response: "她向后退了一步。",
+                                spoken_dialogue: "",
+                                inner_response: "她开始警惕这条新消息。",
                             },
                         },
                     },
@@ -243,42 +187,52 @@ describe("RP builtin profiles", () => {
                 } satisfies SidecarContext<Parameters<typeof memorySave.merge>[0]["input"]>)
                 : memorySave?.enterPrompt ?? "";
             expect(memorySavePrompt).toContain("eventsPath");
-            expect(memorySavePrompt).toContain("event_update");
+            expect(memorySavePrompt).toContain("根据 visible_response、spoken_dialogue、inner_response 和本轮上下文判断是否需要更新");
             expect(memorySavePrompt).toContain("不要修改 statePath");
-            expect(systemPrompt).toContain("只扮演一个角色：绘璃奈");
-            expect(systemPrompt).toContain("不能读取完整 simulation/");
+            expect(systemPrompt).toContain("<actor_definition>");
+            expect(systemPrompt).toContain("<actor id=\"heroine\" kind=\"npc\">绘璃奈</actor>");
+            expect(systemPrompt).toContain("你就是这个角色本人");
+            expect(systemPrompt).toContain("<thinking_mode>");
+            expect(systemPrompt).toContain("请以 绘璃奈 的第一人称进行人物分析");
+            expect(systemPrompt).toContain("思考示例：<｜begin▁of▁thinking｜>我是 绘璃奈");
+            expect(systemPrompt).toContain("你的思考应严格按以下顺序进行");
+            expect(systemPrompt).toContain("回顾 <actor_sidecar_context>");
+            expect(systemPrompt).toContain("<message_tags>");
             expect(systemPrompt).toContain("必须调用 report_result");
             expect(systemPrompt).toContain("report_result.result");
-            expect(systemPrompt).toContain("mind_update");
-            expect(systemPrompt).toContain("state_update");
+            expect(systemPrompt).toContain("inner_response");
+            expect(systemPrompt).not.toContain("questions");
             expect(systemPrompt).toContain("如果你扮演的是玩家 actor");
-            expect(systemPrompt).toContain("主扮演阶段不要主动调用 read、write 或 edit");
-            expect(systemPrompt).toContain("角色文件维护由 actor.memory-save 旁路完成");
-            expect(systemPrompt).toContain("event_update");
-            expect(systemPrompt).toContain("不要为了“完成更新”而编造 update");
+            expect(systemPrompt).toContain("主扮演阶段不要调用 read、write 或 edit");
+            expect(systemPrompt).toContain("你看不到 subject.md、events.md、knowledge.md、mind.md、state.md 原文");
+            expect(systemPrompt).toContain("文件维护由 actor.context-load / actor.memory-save 旁路处理");
+            expect(systemPrompt).toContain("visible_response");
+            expect(systemPrompt).toContain("我只表达角色反应本身");
             expect(systemPrompt).toContain("必须调用 report_result");
-            expect(systemPrompt).toContain("戏内消息");
+            expect(systemPrompt).toContain("<gm>");
+            expect(systemPrompt).toContain("<角色 name=\"...\">");
+            expect(systemPrompt).not.toContain("knowledge.md 使用二级章节归类");
             expect(systemPrompt).not.toContain("not_known_to_you");
             expect(systemPrompt).not.toContain("必要时可更新");
-            expect(modelContextText).toContain("<subject_instruction>");
-            expect(modelContextText).toContain("保持礼貌但警惕");
-            expect(modelContextText).toContain("<subject_events>");
-            expect(modelContextText).toContain("她第一次在广场边缘见到主角");
-            expect(modelContextText).toContain("<subject_knowledge>");
-            expect(modelContextText).toContain("她相信主角值得观察");
-            expect(modelContextText).toContain("<subject_mind>");
-            expect(modelContextText).toContain("她正在判断主角的用意");
-            expect(modelContextText).toContain("<subject_state>");
-            expect(modelContextText).toContain("她位于学院区广场边缘");
+            expect(modelContextText).toContain("<actor_binding>");
+            expect(modelContextText).toContain("这些路径只供 actor.context-load / actor.memory-save 旁路使用");
+            expect(modelContextText).not.toContain("<subject_instruction>");
+            expect(modelContextText).not.toContain("保持礼貌但警惕");
+            expect(modelContextText).not.toContain("她第一次在广场边缘见到主角");
+            expect(modelContextText).not.toContain("她相信主角值得观察");
+            expect(modelContextText).not.toContain("她正在判断主角的用意");
+            expect(modelContextText).not.toContain("她位于学院区广场边缘");
             expect(modelContextText).toContain("knowledgePath");
             expect(modelContextText).toContain("eventsPath");
             expect(modelContextText).toContain("mindPath");
             expect(modelContextText).toContain("statePath");
-            expect(modelContextText).toContain("只回复 GM");
+            expect(modelContextText).toContain("<actor_run_reminder actorId=\"heroine\">");
+            expect(modelContextText).toContain("只回应当前 user message");
             expect(modelContextText).toContain("并必须调用 report_result");
             expect(modelContextText).toContain("不要主动读写文件");
+            expect(modelContextText).toContain("记忆维护交给 sidecar");
             expect(appendingText).toContain("Runtime Location");
-            expect(appendingText).not.toContain("只回复 GM");
+            expect(appendingText).not.toContain("只回应当前 user message");
         } finally {
             await rm(fixture.workspaceRoot, {recursive: true, force: true});
         }
@@ -316,9 +270,9 @@ describe("RP builtin profiles", () => {
             expect(simulatorActorProfile.inputSchema).toBe(SubjectSimulatorInputSchema);
             expect(simulatorActorProfile.outputSchema).toBe(SubjectSimulatorOutputSchema);
             expect(simulatorActorProfile.allowedToolKeys).toEqual(["read", "write", "edit", "report_result"]);
-            expect(systemPrompt).toContain("NeuroBook 的 simulator.actor");
-            expect(systemPrompt).toContain("只扮演一个角色：绘璃奈");
-            expect(modelContextText).toContain("<subject_instruction>");
+            expect(systemPrompt).toContain("<profile>simulator.actor</profile>");
+            expect(systemPrompt).toContain("<actor id=\"heroine\" kind=\"npc\">绘璃奈</actor>");
+            expect(modelContextText).toContain("<actor_binding>");
             expect(modelContextText).toContain("knowledgePath");
         } finally {
             await rm(fixture.workspaceRoot, {recursive: true, force: true});
@@ -375,12 +329,17 @@ describe("RP builtin profiles", () => {
 
     it("simulation 模板包含 events 路径、runs 新结构和不产生断链的 entity 示例", async () => {
         const templateRoot = resolve("assets", "workspace", ".nbook", "templates", "project-directory-templates", "simulation");
+        const configText = await readFile(join(templateRoot, "config.yaml"), "utf-8");
         const castText = await readFile(join(templateRoot, "cast.yaml"), "utf-8");
-        const cast = parseYaml(castText) as {subjects?: Array<{id?: string; events?: string}>};
+        const cast = parseYaml(castText) as {defaultActorProfile?: string; subjects?: Array<{id?: string; events?: string; profile?: string}>};
         const subjects = cast.subjects ?? [];
 
+        expect(configText).toContain("leaderProfile: simulator.leader");
+        expect(configText).toContain("defaultActorProfile: simulator.actor");
+        expect(cast.defaultActorProfile).toBe("simulator.actor");
         expect(subjects.length).toBeGreaterThan(0);
         for (const subject of subjects) {
+            expect(subject.profile).toBe("simulator.actor");
             expect(subject.events).toBeTruthy();
             const eventsPath = String(subject.events).replace(/^simulation[\\/]/, "");
             const eventsText = await readFile(join(templateRoot, eventsPath), "utf-8");

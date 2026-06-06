@@ -12,8 +12,7 @@
 
 相关文档：
 
-- [统一引用系统规范](../workspace-reference/system.md)
-- [Inline 引用规范](../workspace-reference/inline-reference.md)
+- [内容引用规范](content-references.md)
 - [AI 表单批注规范](./ai-annotation.md)
 
 ---

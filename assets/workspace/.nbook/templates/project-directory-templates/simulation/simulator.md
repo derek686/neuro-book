@@ -1,6 +1,6 @@
 # GM 运行协议
 
-本文件是 `simulation/` 的 simulator leader 入口说明。启动 RP/simulation 时，`leader.rp` 读取 `config.yaml`、`cast.yaml`、`simulator.md` 和 `writer.md`；通用启动说明由 RP skill 和 simulator profile 承担。
+本文件是 `simulation/` 的 simulator leader 入口说明。启动 RP/simulation 时，`simulator.leader` 先遵守 Project `AGENTS.md`，再读取本文件、必要的 `config.yaml`、`cast.yaml`、`writer.md`、最近 Tick、相关 lorebook 和 Plot；通用启动说明由 RP skill 和 simulator profile 承担。
 
 `simulation/` 默认只给 GM 读取。actor 和 writer 不把整个目录当作工作区，只接收 GM 或 runtime 自动注入的特定文件与 packet。
 
@@ -28,8 +28,8 @@
 1. 读取 `simulation/config.yaml` 与 `simulation/cast.yaml`。
 2. 读取 `simulation/writer.md`，并按本文件要求读取当前项目中必要的世界观、规则、文风和创作边界。
 3. 如果必要文件还没填写，使用 `config.yaml` 的 `fallbackScene` 建立最小场景，不要阻塞启动。
-4. 初始化 `cast.yaml` 中 `defaultActive: true` 的 actors。
-5. 告诉每个 actor 它自己的 `subject.md`、`events.md`、`knowledge.md`、`mind.md`、`state.md` 路径，以及当前场景中可观察的信息。
+4. 初始化 `cast.yaml` 中 `defaultActive: true` 的 subjects。
+5. 为每个需要模拟的 subject 创建或复用 `simulator.actor`，并发送当前场景中它可观察的信息。subject 文件由 actor sidecar 读取和过滤，主扮演 run 不直接接收文件原文。
 6. 向用户输出开场说明：玩家角色知道什么、当前处境是什么、附近有哪些可互动对象。
 7. 等待用户输入第一条行动、台词或指令。
 
@@ -116,17 +116,17 @@ writer_brief:
 
 ## Profile 调用边界
 
-调用 `rp.actor` 时只注入：
+调用 `simulator.actor` 时传入 input 路径：
 
 - `cast.yaml` 中该 actor 的 id、name、kind。
-- 该 actor 的 `subject.md`。
-- 该 actor 的 `events.md`。
-- 该 actor 的 `knowledge.md`。
-- 该 actor 的 `mind.md`。
-- 该 actor 的 `state.md`。
-- GM 为本 Tick 生成的 actor-facing message。
+- 该 actor 的 `subject.md` 路径。
+- 该 actor 的 `events.md` 路径。
+- 该 actor 的 `knowledge.md` 路径。
+- 该 actor 的 `mind.md` 路径。
+- 该 actor 的 `state.md` 路径。
+- GM 为本 Tick 生成的 actor-facing message。主 run 只看到 sidecar 过滤后的 actor-safe context 和这条消息。
 
-`cast.yaml` 字段到 `rp.actor` input 的映射固定为：
+`cast.yaml` 字段到 `simulator.actor` input 的映射固定为：
 
 ```text
 instruction -> instructionPath
@@ -136,11 +136,11 @@ mind        -> mindPath
 state       -> statePath
 ```
 
-调用 `rp.actor` 时不要注入：
+调用 `simulator.actor` 时不要注入：
 
 - 完整 `simulation/`。
 - `simulator.md`、`writer.md`。
-- 上帝视角 `lorebook/`、`reference/`。
+- 上帝视角 `lorebook/`、`reference/` 原文。
 - 其他 actor 的 `knowledge.md`、私密意图或 response packet。
 
 调用 `rp.writer` 时只注入：
@@ -164,7 +164,7 @@ GM 内部可以用结构化 scratch 组织 scene、event、hidden facts、actor 
 不要发给 actor：
 
 - `not_known_to_you` 字段。角色不知道的内容直接不出现。
-- `task` 字段。返回格式和工具调用要求由 `rp.actor` profile 负责。
+- `task` 字段。返回格式和工具调用要求由 `simulator.actor` profile 负责。
 - YAML、JSON、字段任务单、writer brief、GM hidden facts、其他 actor 私密意图。
 
 示例：
@@ -184,50 +184,40 @@ GM 内部可以用结构化 scratch 组织 scene、event、hidden facts、actor 
 要求 actor 返回结构化信息：
 
 ```text
-visible_action:
+visible_response:
 spoken_dialogue:
-private_intent:
-emotional_state:
-assumptions:
-questions_to_gm:
-event_update:
-knowledge_update:
-mind_update:
-state_update:
+inner_response:
 ```
 
-- `visible_action` 和 `spoken_dialogue` 可以进入 writer brief。
-- `private_intent`、`emotional_state`、`assumptions`、`questions_to_gm` 只给 GM 参考。
-- `event_update` 可以写入该 actor 的 `events.md`，但只记录该 actor 本 Tick 经历、观察、听说或被告知的事件流水。
-- `knowledge_update` 可以写入该 actor 的 `knowledge.md`，但只记录角色已经知道、被告知、观察到或自然推断到的信息。
-- `mind_update` 可以写入该 actor 的 `mind.md`，但只记录当前想法、动机、判断和疑虑。
-- `state_update` 是给 GM 的状态变化候选。真实 subject `state.md` 与 `simulation/entities/` 由 GM 裁决后写入。
+- `visible_response` 和 `spoken_dialogue` 可以进入 writer brief。
+- `inner_response` 只给上级模拟器参考，包含未说出口的情绪、意图、判断或误解。
+- actor 主路不返回记忆更新字段；`events.md`、`knowledge.md`、`mind.md` 由 actor sidecar 根据主路结果和上下文判断是否维护。
 
 ## Actor 文件更新规则
 
-第一版允许 actor sidecar 维护自己的 `events.md`、`knowledge.md`、`mind.md`，但 GM 要约束写入范围。`state.md` 与 `simulation/entities/` 由 GM 裁决后写入：
+第一版允许 actor sidecar 根据主路角色反应维护自己的 `events.md`、`knowledge.md`、`mind.md`，但 simulator leader 要约束写入范围。`state.md` 与 `simulation/entities/` 由 simulator leader 裁决后写入：
 
 - events.md 只追加本 Tick 后角色经历、观察、听说或被告知的事件流水。
 - 只追加本 Tick 后角色已经知道、被告知、观察到或自然推断到的信息。
 - 不把 canonical hidden facts 写进 actor knowledge，除非角色已经在故事内获得该信息。
-- 如果角色掌握的信息与 canonical truth 不一致，由 GM 在后台区分；knowledge.md 只按角色视角记录，不让 actor 自己标注“误解”。
+- 如果角色掌握的信息与 canonical truth 不一致，由 simulator leader 在后台区分；knowledge.md 只按角色视角记录，不让 actor 自己标注“误解”。
 - knowledge.md 使用二级章节归类、三级标题表示条目；新增内容写成 `### 条目标题` 加正文段落，不要用 Markdown 列表堆条目。
 - 不要在 knowledge.md 新增“信念与误解”“最近更新”或“更新规则”章节。
-- 如果 actor 提出的 `knowledge_update` 会泄露上帝视角，由 GM 丢弃或改写为角色可感知版本。
+- 如果 actor 主路反应暗示了不该写入的上帝视角信息，由 sidecar 跳过，或交给 simulator leader 改写为角色可感知版本。
 - 玩家 actor 的 `knowledge.md` 只记录玩家角色已获得的信息，不替用户写长期目标或内心决定。
-- `mind.md` 可以更主观，但只能写角色当前会想的内容；不要写作者规划或 GM 裁决。
+- `mind.md` 可以更主观，但只能写角色当前会想的内容；不要写作者规划或 simulator leader 裁决。
 - `state.md` 尽量短而可检查，重点记录当前地点、持有物、身体状态、关系压力和短期目标。
 - `simulation/entities/` 只记录需要追踪真实实例状态的对象；entity 可以引用 lorebook prototype，但不能因此泄露给 subject。
 
 ## State / Entity Commit 示例
 
-actor 的 `state_update` 只是候选。GM 裁决后再写入真实状态：
+actor 主路不返回 state update。若角色反应暗示状态变化，simulator leader 裁决后再写入真实状态：
 
 ```text
-actor state_update:
+actor reaction:
   示例 NPC 把一瓶看起来普通的血药交给玩家角色。
 
-GM commit:
+simulator leader commit:
   - 如果这是普通血药：在 player/state.md 的 inventory 中记录 prototype + quantity。
   - 如果这是被下毒的血药：创建 simulation/entities/poisoned-blood-potion-001/，在 player/state.md 中引用该 entity。
   - player/events.md 只写“玩家角色收到一瓶看起来普通的血药”；除非玩家角色发现毒性，不写隐藏真相。

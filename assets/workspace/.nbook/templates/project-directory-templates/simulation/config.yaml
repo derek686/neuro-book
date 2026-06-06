@@ -1,5 +1,5 @@
-leaderProfile: leader.rp
-defaultActorProfile: rp.actor
+leaderProfile: simulator.leader
+defaultActorProfile: simulator.actor
 defaultWriterProfile: rp.writer
 defaultPlayerActor: player
 
@@ -49,7 +49,7 @@ profileInputs:
       - actor.mind
       - actor.state
       - gm.filtered_observation_packet
-    fileToolScope: own_events_knowledge_mind_md
+    fileToolScope: sidecar_own_events_knowledge_mind_md
     doNotInject:
       - simulation/simulator.md
       - simulation/writer.md

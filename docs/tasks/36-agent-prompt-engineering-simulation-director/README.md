@@ -26,12 +26,12 @@
 
 ## Current State
 
-- 最新目录规范入口是 [reference/content/directory-protocol.md](../../../reference/content/directory-protocol.md)，旧 `roleplay/` 口径已经迁移到 `simulation/`。
+- 最新目录规范入口是 [reference/content/project-structure.md](../../../reference/content/project-structure.md)，simulation 细节读 [reference/content/simulation.md](../../../reference/content/simulation.md)。旧 `roleplay/` 口径已经迁移到 `simulation/`。
 - 写作流程参考是 [reference/agent/novel-writing-workflow.md](../../../reference/agent/novel-writing-workflow.md)。
 - Plot System 当前稳定参考是 [reference/plot/system.md](../../../reference/plot/system.md)。
 - 普通 `writer` profile 当前是一章节一 agent，只写 `chapterPaths[0]` 对应章节，读取 Chapter Plot 和显式 `lorebookEntries`，不维护 `simulation/`。
-- `leader.default` 当前通过 `reference/agent/leader-default.md` 与 `reference/agent/neurobook-project-guide.md` 获得 Plot / Simulation / Writer 协作规则。
-- RP 侧现有 profiles 是 `leader.rp`、`simulator.actor`、`rp.writer`；它们已经使用 `simulation/subjects`、`simulation/entities`、`simulation/runs` 口径。
+- `leader.default` 当前通过 `reference/agent/leader-default.md`、`reference/agent/project-workspace-guide.md` 与独立 Plot reference 获得 Simulation / Writer / Plot 协作规则。
+- RP 侧现有 profiles 是 `simulator.leader`、`simulator.actor`、`rp.writer`；它们已经使用 `simulation/subjects`、`simulation/entities`、`simulation/runs` 口径。旧 `leader.rp` 已删除。
 - 已新增独立 `simulator.leader` profile；写作模式和 RP 模式都可以把世界运行态、状态裁决和 subject 调度交给它。
 - 已新增独立 `director` profile；剧情结构、Thread / Scene / Plot 设计和 Plot System 落库交给它。
 - 第一轮角色分工已冻结：`leader.default` 退回用户助理 / 监工 / 路由器，世界运行态交给 `simulator.leader`，剧情结构交给 `director`。
@@ -98,7 +98,7 @@ RP 模式第一版：
 5. `rp.writer` 根据 simulator brief 渲染用户可见正文。
 6. RP 入口把正文交给用户，并等待下一 Tick。
 
-`leader.rp` 后续可以逐渐变薄，作为 RP 用户入口和流程壳，而不是继续包干 GM、director、simulator、writer 全部职责。
+旧 `leader.rp` 不再作为 RP 用户入口和流程壳保留；RP / simulation 入口统一使用 `simulator.leader`，避免两个 simulator leader 口径长期并存。
 
 ## Simulator / Director Profile Draft
 
@@ -502,7 +502,7 @@ Plot 是行动级节拍，不是五段式大纲。
 - `assets/workspace/.nbook/agent/skills/novel-workflow-08-plot-planning/SKILL.md`
 - `assets/workspace/.nbook/agent/skills/novel-workflow-09-chapter-writing/SKILL.md`
 - `reference/agent/leader-default.md`
-- `reference/agent/neurobook-project-guide.md`
+- `reference/agent/project-workspace-guide.md`
 - `reference/agent/novel-writing-workflow.md`
 - `reference/plot/system.md`
 
@@ -519,10 +519,23 @@ Resolved mismatch:
 - `leader.default` 的工具白名单已包含 `create_story_plots`，并通过 reference 文档学习 simulator / director 协作边界。
 - 新增 `simulator.leader` builtin profile：负责 simulation 裁决、subject 调度、state commit 建议、writer-safe brief、director handoff 和 plot handoff；第一版不开放 Plot 写入工具。
 - 新增 `director` builtin profile：负责 Thread / Scene / Plot 设计和落库，允许 Plot 读写工具和 `create_story_plots`，不开放 `write` / `edit` / `apply_patch` / `bash`。
-- subject simulator 共享实现已抽到 `subject-simulator-profile.tsx`，`simulator.actor` 是唯一运行 profile；旧 actor legacy profile 已删除。
+- subject simulator 实现已 inline 回 `simulator.actor.profile.tsx`，`simulator.actor` 是唯一运行 profile；旧 actor legacy profile 已删除。
 - 写作 workflow skills `05` / `06` / `08` / `09` 已更新到 `simulator.leader` / `director` / `simulation/` 口径。
-- `reference/agent/leader-default.md`、`reference/agent/neurobook-project-guide.md`、`reference/agent/novel-writing-workflow.md` 已同步新职责边界。
+- `reference/agent/leader-default.md`、`reference/agent/project-workspace-guide.md`、`reference/agent/novel-writing-workflow.md` 已同步新职责边界。
 - system builtin profiles 已全量重新编译，并重新生成 `.system-profile-metadata.json`。
+
+## Implementation V2: Simulator Entry Convergence
+
+本轮按新的 simulator profile 口径继续收敛：
+
+- 删除 `leader.rp` builtin profile、compiled artifact 和 `LeaderRp*` contracts；RP / simulation 入口统一使用 `simulator.leader`。
+- `simulator.leader` input schema 删除 `mode`；写作、RP、全自动或半自动模式由每轮 prompt 指定。
+- `simulator.leader` prompt 强化读取顺序：先遵守 `AGENTS.md` 与 `simulation/simulator.md`，冲突时以 `AGENTS.md` 为准；再按需读取最近 tick、相关 lorebook、Plot 和 state。
+- `simulator.leader` 负责持有和调度 emulator；为需要模拟的 subject 创建或复用 `simulator.actor`，并逐个发送 actor-facing packet。
+- 新建 subject / entity 默认先通过 `open_questions` 或 `state_change_requests` 报告，获批后再创建；明确全自动下一 tick 时可以直接推进但必须报告提交内容。
+- `simulator.actor` 主 run 不再直接读取 `subject.md`、`events.md`、`knowledge.md`、`mind.md`、`state.md` 原文；这些文件只由 context-load / memory-save sidecar 使用。
+- `simulator.actor` 主 run 只消费 actor binding 元数据、`<actor_sidecar_context>` 和 GM 当前消息，并新增角色视角标签协议。
+- user-assets 覆盖层中的旧 `workspace/.nbook/agent/profiles/builtin/leader.rp.profile.tsx` 与 sync state 残留已删除，避免 catalog 继续暴露旧 RP 入口。
 
 ## Open Issues / Risks
 
@@ -536,7 +549,7 @@ Resolved mismatch:
 
 ## Decisions
 
-- 新规范入口使用 `reference/content/directory-protocol.md`。
+- 新规范入口使用 `reference/content/project-structure.md`，simulation 细节使用 `reference/content/simulation.md`。
 - 不新建 `emulation/` 目录；写作模式中的世界运行态仍落在 `simulation/`。
 - 普通 `writer` 继续不维护 `simulation/`。
 - `director` 负责剧情结构和 Plot System，`simulator` 负责世界状态与因果推演，两者需要分工。
@@ -556,7 +569,7 @@ Resolved mismatch:
 - `reference/plot/README.md`
 - `reference/plot/system.md`
 - `reference/agent/leader-default.md`
-- `reference/agent/neurobook-project-guide.md`
+- `reference/agent/project-workspace-guide.md`
 - `reference/agent/novel-writing-workflow.md`
 - `assets/workspace/.nbook/agent/skills/novel-workflow-05-emulation-bootstrap/SKILL.md`
 - `assets/workspace/.nbook/agent/skills/novel-workflow-06-emulation-tick/SKILL.md`
@@ -571,7 +584,6 @@ Resolved mismatch:
 - `server/agent/profiles/builtin-contracts.ts`
 - `assets/workspace/.nbook/agent/profiles/builtin/simulator.leader.profile.tsx`
 - `assets/workspace/.nbook/agent/profiles/builtin/director.profile.tsx`
-- `assets/workspace/.nbook/agent/profiles/builtin/subject-simulator-profile.tsx`
 - `assets/workspace/.nbook/agent/profiles/builtin/simulator.actor.profile.tsx`
 - `assets/workspace/.nbook/agent/profiles/builtin/leader.rp.profile.tsx`
 - `assets/workspace/.nbook/agent/profiles/.compiled/*`
@@ -585,7 +597,7 @@ Resolved mismatch:
 
 ## Verification
 
-- 已阅读 `reference/content/directory-protocol.md`。
+- 已阅读 `reference/content/project-structure.md` 和 `reference/content/simulation.md`。
 - 已阅读 `reference/agent/novel-writing-workflow.md`。
 - 已阅读 `reference/plot/system.md`。
 - 已检查 `leader.default`、`leader.rp`、`simulator.actor`、`rp.writer`、`writer` profile 的当前提示词入口。
@@ -605,9 +617,21 @@ Resolved mismatch:
 - 已运行 `bun run profile:metadata`，成功准备 12 个 system profile metadata。
 - 已运行 `bunx vitest run server/plot/services/plot.service.test.ts server/agent/tools/plot-tools.test.ts server/agent/profiles/rp-profiles.test.ts server/agent/profiles/simulation-director-profiles.test.ts server/agent/profiles/leader-assets-profile.test.ts`，5 个测试文件、26 个用例通过。
 
+### V2 Verification
+
+- 已运行 `bun scripts/build/profile.ts check builtin/simulator.leader.profile.tsx --system`，通过。
+- 已运行 `bun scripts/build/profile.ts check builtin/simulator.actor.profile.tsx --system`，通过。
+- 已运行 `bun scripts/build/profile.ts check builtin/rp.writer.profile.tsx --system`，通过。
+- 已运行 `bun scripts/build/profile.ts compile builtin/simulator.leader.profile.tsx --system --all`，成功生成 10 个 system profile artifact，列表不含 `leader.rp`。
+- 已运行 `bun run profile:metadata`，成功准备 10 个 system profile，compiled stale 为 0。
+- 已运行 `bun scripts/build/profile.ts compile --all`，成功重建 user-assets profile compiled manifest，列表不含 `leader.rp`。
+- 已运行 `bunx vitest run server/agent/profiles/simulation-director-profiles.test.ts server/agent/profiles/rp-profiles.test.ts server/workspace-files/workspace-files.test.ts`，3 个测试文件、77 个用例通过。
+- 已运行 active source / template / user-assets 搜索审计：`leader.rp` 只剩 `PROJECT-STATUS.md` 当前状态说明、`reference/content/simulation.md` removed legacy 说明、`rp-profiles.test.ts` 负断言。
+- 未通过：`bunx vitest run server/agent/harness/neuro-agent-harness.test.ts`。该文件当前卡在既有 harness 异步测试超时（单跑 `parallel 工具会并发执行...` 仍在 10 秒超时）；本轮未继续用扩大 timeout 方式处理，留作独立 Harness 测试稳定性问题。
+
 ### Final Completion Audit
 
-- 角色分工：已由 `Frozen Role Boundary V1`、`reference/agent/leader-default.md`、`reference/agent/neurobook-project-guide.md` 和 `reference/agent/novel-writing-workflow.md` 覆盖。
+- 角色分工：已由 `Frozen Role Boundary V1`、`reference/agent/leader-default.md`、`reference/agent/project-workspace-guide.md` 和 `reference/agent/novel-writing-workflow.md` 覆盖。
 - Plot System Agent Spec：已迁移到 `reference/plot/agent-spec.md`，并由 `reference/plot/system.md` 链接；Thread 长摘要、Scene 详细摘要、Plot 行动级粒度、`summary/effect/writingTip` 写法和批量创建规则均已写入稳定参考。
 - `create_story_plots`：已进入 DTO、parser、service、facade、agent tool 和 `leader.default` tool catalog 测试；V1 范围限定为同一 Scene 批量追加。
 - `simulator.leader` / `director` / `simulator.actor`：source profile、compiled artifact、system metadata 和 profile tests 均已覆盖。

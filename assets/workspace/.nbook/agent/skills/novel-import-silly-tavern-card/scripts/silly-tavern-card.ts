@@ -32,6 +32,7 @@ type EntryCategory =
     | "rule"
     | "item"
     | "event"
+    | "species"
     | "system"
     | "formatting"
     | "dynamic-mvu"
@@ -50,8 +51,10 @@ type LorebookImportTarget = {
 type MappingSummary = {
     categories: Record<EntryCategory, number>;
     lorebookTargets: Record<string, number>;
-    skippedDynamic: number;
+    dynamicArchived: number;
+    structuralMarkers: number;
     needsReview: number;
+    cardBodyMaterials: number;
 };
 
 type GeneratedManifest = {
@@ -79,6 +82,13 @@ export type EntryClassification = {
     reason: string;
     markerKeys: string[];
     reviewFlags: string[];
+    structuralMarker: boolean;
+};
+
+type CardBodyMaterial = {
+    filePath: string;
+    title: string;
+    content: string;
 };
 
 export type CardInspection = {
@@ -105,8 +115,8 @@ export type CardInspection = {
 
 const DEFAULT_OUT = "reference/silly-tavern";
 const GENERATED_MARKER = "neuro-book:silly-tavern-card generated-sha256";
-const ENTRY_CATEGORIES: EntryCategory[] = ["character", "location", "faction", "rule", "item", "event", "system", "formatting", "dynamic-mvu", "dynamic-prompt", "unknown"];
-const PRIMARY_CATEGORY_ORDER: EntryCategory[] = ["dynamic-mvu", "dynamic-prompt", "character", "location", "faction", "rule", "system", "item", "event", "formatting", "unknown"];
+const ENTRY_CATEGORIES: EntryCategory[] = ["character", "location", "faction", "rule", "item", "event", "species", "system", "formatting", "dynamic-mvu", "dynamic-prompt", "unknown"];
+const PRIMARY_CATEGORY_ORDER: EntryCategory[] = ["dynamic-mvu", "dynamic-prompt", "character", "location", "faction", "species", "rule", "system", "item", "event", "formatting", "unknown"];
 const DYNAMIC_CATEGORIES = new Set<EntryCategory>(["dynamic-mvu", "dynamic-prompt"]);
 const IMPORT_CATEGORY_TO_LOREBOOK_ROOT: Record<EntryCategory, string> = {
     character: "lorebook/character",
@@ -115,6 +125,7 @@ const IMPORT_CATEGORY_TO_LOREBOOK_ROOT: Record<EntryCategory, string> = {
     rule: "lorebook/world/rule",
     item: "lorebook/item",
     event: "lorebook/event",
+    species: "lorebook/species",
     system: "lorebook/system",
     formatting: "lorebook/note",
     unknown: "lorebook/note",
@@ -128,6 +139,7 @@ const IMPORT_CATEGORY_TO_NODE_TYPE: Record<EntryCategory, {type: string; subtype
     rule: {type: "world", subtype: "rule"},
     item: {type: "item", subtype: null},
     event: {type: "event", subtype: null},
+    species: {type: "species", subtype: null},
     system: {type: "system", subtype: null},
     formatting: {type: "note", subtype: null},
     unknown: {type: "note", subtype: null},
@@ -145,6 +157,14 @@ const DYNAMIC_MARKERS: Array<{key: string; pattern: RegExp; category: EntryCateg
     {key: "generate", pattern: /\[GENERATE:[^\]]+\]|@@generate_(?:before|after)/i, category: "dynamic-prompt"},
     {key: "render", pattern: /\[RENDER:[^\]]+\]|@@render_(?:before|after)|@@iframe|@@message_formatting/i, category: "dynamic-prompt"},
 ];
+const COMMENT_PATTERN_RULES: Array<{category: EntryCategory; pattern: RegExp; reason: string}> = [
+    {category: "species", pattern: /(?:^|[-_【\[\s])(?:种族|智慧生物|种族概览|种族血脉)(?:[-_】\]\s]|$)|DLC-扩展-.*种族-/u, reason: "comment 命中种族命名模式。"},
+    {category: "character", pattern: /DLC-角色-|角色卡DLC|(?:^|[-_【\[\s])(?:角色|人物|NPC)(?:[-_】\]\s]|$)/u, reason: "comment 命中角色命名模式。"},
+    {category: "location", pattern: /城镇-|地块-|冒险区域-|封印区|内城区|外环区|中城区|圣都-|(?:^|[-_【\[\s])(?:地点|地区|区域|城市|建筑|房间)(?:[-_】\]\s]|$)/u, reason: "comment 命中地点层级命名模式。"},
+    {category: "faction", pattern: /政治与社会|总览$|文化$|势力概览|组织概览|(?:^|[-_【\[\s])(?:势力|组织|阵营|公会|教会)(?:[-_】\]\s]|$)/u, reason: "comment 命中势力/组织命名模式。"},
+    {category: "system", pattern: /命定系统-|核心数值|状态规则|经验值|好感度|复活机制|战斗生产|品质效果|登神长阶|经济价格|角色生成|随机池|生产制作|战斗协议/u, reason: "comment 命中系统/玩法命名模式。"},
+    {category: "event", pattern: /DLC-事件-.*(?:入口|本体)\b|(?:^|[-_【\[\s])(?:事件|剧情|任务|主线|支线|历史|传说)(?:[-_】\]\s]|$)/u, reason: "comment 命中事件/剧情命名模式。"},
+];
 const SEMANTIC_RULES: Array<{category: EntryCategory; pattern: RegExp; reason: string}> = [
     {category: "character", pattern: /(^|[-_【\s])(?:角色|人物|NPC|主角|女主|男主|学生|老师|人设|角色卡|DLC-角色)(?:[-_】\s]|$)|背景故事|关键经历|性格|外貌|口癖|关系网/u, reason: "命中角色/人物设定特征。"},
     {category: "location", pattern: /(^|[-_【\s])(?:地点|地区|区域|城市|村镇|学院区|场景|建筑|房间|宿舍|教室|酒馆|公会|广场|街区|地图|地理)(?:[-_】\s]|$)|位于|坐落|地处/u, reason: "命中地点/区域设定特征。"},
@@ -152,7 +172,8 @@ const SEMANTIC_RULES: Array<{category: EntryCategory; pattern: RegExp; reason: s
     {category: "rule", pattern: /(^|[-_【\s])(?:规则|法则|世界规则|限制|机制|设定|能力体系|魔法|炼金|战斗|技能|数值)(?:[-_】\s]|$)|不可|必须|消耗|判定/u, reason: "命中规则/机制设定特征。"},
     {category: "item", pattern: /(^|[-_【\s])(?:物品|道具|装备|武器|药剂|材料|资源|遗物|凭证|货币|钥匙)(?:[-_】\s]|$)|持有|用途/u, reason: "命中物品/资源设定特征。"},
     {category: "event", pattern: /(^|[-_【\s])(?:事件|剧情|任务|主线|支线|历史|传说|事故|战争|仪式|开场|序章)(?:[-_】\s]|$)|发生于|导火索/u, reason: "命中事件/剧情背景特征。"},
-    {category: "system", pattern: /(^|[-_【\s])(?:系统|玩法|面板|状态栏|好感度|变量|背包|任务栏|日程|时间)(?:[-_】\s]|$)/u, reason: "命中系统/玩法说明特征。"},
+    {category: "species", pattern: /(^|[-_【\s])(?:种族|智慧生物|亚种|血脉|寿命|繁衍|族群)(?:[-_】\s]|$)/u, reason: "命中种族/生物族群设定特征。"},
+    {category: "system", pattern: /(^|[-_【\s])(?:系统|玩法|面板|状态栏|好感度|变量|背包|任务栏|日程|时间|命定系统|核心数值|状态规则|经验值|复活机制|战斗协议|生产制作|随机池|经济价格|品质效果|登神长阶|角色生成)(?:[-_】\s]|$)/u, reason: "命中系统/玩法说明特征。"},
     {category: "formatting", pattern: /(^|[-_【\s])(?:格式|回复格式|输出格式|文风|写作规则|禁止|示例回复|状态栏格式)(?:[-_】\s]|$)|不要输出|必须输出/u, reason: "命中格式/写作约束特征。"},
 ];
 const REVIEW_MARKERS: Array<{key: string; pattern: RegExp}> = [
@@ -279,6 +300,7 @@ export function inspectCard(input: RawCardInput): CardInspection {
     const regexScripts = readArray(extensions.regex_scripts);
     const helperScripts = readArray(tavernHelper.scripts);
     const helperVariables = readObject(tavernHelper.variables);
+    const cardBodyMaterials = collectCardBodyMaterials(input.card);
     const allText = [
         readString(data.description),
         readString(data.scenario),
@@ -293,6 +315,7 @@ export function inspectCard(input: RawCardInput): CardInspection {
     ].join("\n");
     const markers = countMarkers(allText);
     const mappingSummary = buildMappingSummary(entries);
+    mappingSummary.cardBodyMaterials = cardBodyMaterials.length;
     const name = readString(data.name) || readString(input.card.name) || inferNameFromPath(input.sourcePath);
     const warnings: string[] = [];
     if (input.kind === "preset") {
@@ -352,21 +375,22 @@ function classifyEntry(rawEntry: unknown, index: number): EntryClassification {
     const content = readString(entry.content);
     const keys = [...readStringArray(entry.keys), ...readStringArray(entry.secondary_keys)].join("\n");
     const text = `${comment}\n${keys}\n${content}`;
+    const structuralMarker = isStructuralMarker(comment, content);
     const matchedDynamicMarkers = DYNAMIC_MARKERS.filter((marker) => marker.pattern.test(text));
+    const commentMatches = COMMENT_PATTERN_RULES.filter((rule) => rule.pattern.test(comment));
     const semanticMatches = SEMANTIC_RULES.filter((rule) => rule.pattern.test(text));
     const reviewFlags = REVIEW_MARKERS.filter((marker) => marker.pattern.test(text)).map((marker) => marker.key);
+    const stableMatches = commentMatches.length > 0 ? commentMatches : semanticMatches;
     const categories = uniqueCategories([
         ...matchedDynamicMarkers.map((marker) => marker.category),
-        ...semanticMatches.map((rule) => rule.category),
+        ...stableMatches.map((rule) => rule.category),
     ]);
     if (categories.length === 0) {
         categories.push("unknown");
     }
     const primaryCategory = choosePrimaryCategory(categories);
-    const confidence = classifyConfidence(primaryCategory, matchedDynamicMarkers.length, semanticMatches.length);
-    const reason = matchedDynamicMarkers.length > 0
-        ? `命中动态标记：${matchedDynamicMarkers.map((marker) => marker.key).join(", ")}。`
-        : semanticMatches[0]?.reason ?? "未命中明确规则，保守归入 unknown。";
+    const confidence = classifyConfidence(primaryCategory, matchedDynamicMarkers.length, commentMatches.length, semanticMatches.length);
+    const reason = classificationReason(structuralMarker, matchedDynamicMarkers, commentMatches, semanticMatches);
     return {
         uid: String(entry.uid ?? entry.id ?? index),
         comment,
@@ -378,7 +402,27 @@ function classifyEntry(rawEntry: unknown, index: number): EntryClassification {
         reason,
         markerKeys: matchedDynamicMarkers.map((marker) => marker.key),
         reviewFlags,
+        structuralMarker,
     };
+}
+
+function classificationReason(
+    structuralMarker: boolean,
+    matchedDynamicMarkers: Array<{key: string}>,
+    commentMatches: Array<{reason: string}>,
+    semanticMatches: Array<{reason: string}>,
+): string {
+    if (matchedDynamicMarkers.length > 0) {
+        return `命中动态标记：${matchedDynamicMarkers.map((marker) => marker.key).join(", ")}。`;
+    }
+    if (structuralMarker) {
+        return "comment 命中结构分隔标记，正文为空或极短。";
+    }
+    return commentMatches[0]?.reason ?? semanticMatches[0]?.reason ?? "未命中明确规则，保守归入 unknown。";
+}
+
+function isStructuralMarker(comment: string, content: string): boolean {
+    return comment.includes("➡️") && /(?:开始|结束)\s*$/u.test(comment) && content.length <= 40;
 }
 
 function emptyMappingSummary(): MappingSummary {
@@ -386,8 +430,10 @@ function emptyMappingSummary(): MappingSummary {
     return {
         categories,
         lorebookTargets: {},
-        skippedDynamic: 0,
+        dynamicArchived: 0,
+        structuralMarkers: 0,
         needsReview: 0,
+        cardBodyMaterials: 0,
     };
 }
 
@@ -395,8 +441,12 @@ function buildMappingSummary(entries: EntryClassification[]): MappingSummary {
     const summary = emptyMappingSummary();
     for (const entry of entries) {
         summary.categories[entry.primaryCategory] += 1;
+        if (entry.structuralMarker) {
+            summary.structuralMarkers += 1;
+            continue;
+        }
         if (DYNAMIC_CATEGORIES.has(entry.primaryCategory)) {
-            summary.skippedDynamic += 1;
+            summary.dynamicArchived += 1;
             continue;
         }
         if (needsClassificationReview(entry)) {
@@ -416,12 +466,15 @@ function choosePrimaryCategory(categories: EntryCategory[]): EntryCategory {
     return PRIMARY_CATEGORY_ORDER.find((category) => categories.includes(category)) ?? "unknown";
 }
 
-function classifyConfidence(primaryCategory: EntryCategory, dynamicMatches: number, semanticMatches: number): ClassificationConfidence {
+function classifyConfidence(primaryCategory: EntryCategory, dynamicMatches: number, commentMatches: number, semanticMatches: number): ClassificationConfidence {
     if (primaryCategory === "unknown") {
         return "low";
     }
     if (DYNAMIC_CATEGORIES.has(primaryCategory)) {
         return dynamicMatches > 0 ? "high" : "medium";
+    }
+    if (commentMatches > 0) {
+        return "high";
     }
     return semanticMatches > 0 ? "medium" : "low";
 }
@@ -452,6 +505,9 @@ function shouldImportAsPendingNote(classified: EntryClassification): boolean {
 }
 
 function needsClassificationReview(classified: EntryClassification): boolean {
+    if (classified.structuralMarker) {
+        return false;
+    }
     if (classified.primaryCategory === "unknown") {
         return true;
     }
@@ -560,6 +616,7 @@ async function writeUnpackDirectory(target: {workspaceRoot: string; cardRoot: st
     const regexScripts = readArray(extensions.regex_scripts);
     const helperScripts = readArray(tavernHelper.scripts);
     const helperVariables = readObject(tavernHelper.variables);
+    const cardBodyMaterials = collectCardBodyMaterials(loaded.card);
     const written: string[] = [];
     written.push(await writeGeneratedText({root: target.cardRoot, workspaceRoot: target.workspaceRoot, manifest}, path.join(target.cardRoot, "raw", "card.json"), JSON.stringify(loaded.raw, null, 2) + "\n", force));
     if (loaded.sourceType === "png") {
@@ -567,6 +624,9 @@ async function writeUnpackDirectory(target: {workspaceRoot: string; cardRoot: st
     }
     written.push(await writeGeneratedText({root: target.cardRoot, workspaceRoot: target.workspaceRoot, manifest}, path.join(target.cardRoot, "inspect.json"), JSON.stringify(inspection, null, 2) + "\n", force));
     written.push(await writeGeneratedText({root: target.cardRoot, workspaceRoot: target.workspaceRoot, manifest}, path.join(target.cardRoot, "overview.md"), renderInspectMarkdown(inspection), force));
+    for (const material of cardBodyMaterials) {
+        written.push(await writeGeneratedText({root: target.cardRoot, workspaceRoot: target.workspaceRoot, manifest}, path.join(target.cardRoot, "card-body", material.filePath), renderCardBodyMaterial(material), force));
+    }
     written.push(await writeGeneratedText({root: target.cardRoot, workspaceRoot: target.workspaceRoot, manifest}, path.join(target.cardRoot, "worldbook", "entries.json"), JSON.stringify(worldbookEntries, null, 2) + "\n", force));
     for (const item of sortWorldbookEntries(worldbookEntries)) {
         const classified = classifyEntry(item.entry, item.originalIndex);
@@ -617,12 +677,17 @@ async function importWorldbookEntries(unpacked: UnpackedCard, force: boolean): P
         const raw = readObject(entry);
         const classified = classifyEntry(entry, item.originalIndex);
         importedEntries.push(classified);
+        if (classified.structuralMarker) {
+            continue;
+        }
         if (DYNAMIC_CATEGORIES.has(classified.primaryCategory)) {
+            const archivePath = path.join(unpacked.root, "dynamic-worldbook", `${formatInsertionOrder(entry)}-${slugify(classified.comment) || "entry"}.md`);
+            written.push(await writeGeneratedText(unpacked, archivePath, renderWorldbookEntryArchive(entry, classified), force));
             continue;
         }
         const importTarget = resolveLorebookImportTarget(classified);
         const fileSlug = slugify(`${formatInsertionOrder(entry)}-${unpacked.inspection.slug}-${classified.comment}`);
-        const target = path.join(unpacked.workspaceRoot, importTarget.root, fileSlug, "index.md");
+        const target = resolveLorebookImportPath(unpacked.workspaceRoot, importTarget.root, fileSlug, classified);
         written.push(await writeGeneratedText(unpacked, target, renderMarkdown({
             title: classified.comment,
             type: importTarget.type,
@@ -645,27 +710,92 @@ async function importWorldbookEntries(unpacked: UnpackedCard, force: boolean): P
                 source: "silly-tavern-import",
                 review: "proposed",
             },
-            ext: {
-                sourceCard: unpacked.inspection.sourcePath,
-                unpack: toProjectRelativePath(unpacked.workspaceRoot, unpacked.root),
-                sillyTavernWorldbook: {
-                    ...worldbookEntryMetadata(raw),
-                    classification: {
-                        categories: classified.categories,
-                        primaryCategory: classified.primaryCategory,
-                        confidence: classified.confidence,
-                        reason: classified.reason,
-                        markerKeys: classified.markerKeys,
-                        reviewFlags: classified.reviewFlags,
-                    },
-                },
+            classification: {
+                categories: classified.categories,
+                primaryCategory: classified.primaryCategory,
+                confidence: classified.confidence,
+                markerKeys: classified.markerKeys,
+                reviewFlags: classified.reviewFlags,
+            },
+            import: {
+                source: "silly-tavern-worldbook",
+                uid: classified.uid,
+                enabled: classified.enabled,
+                constant: classified.constant,
+                reason: classified.reason,
+                insertion_order: readInsertionOrder(raw, item.originalIndex),
             },
         }, renderWorldbookEntryBody(entry, classified)), force));
     }
+    const mappingSummary = buildMappingSummary(importedEntries);
+    mappingSummary.cardBodyMaterials = collectCardBodyMaterials(unpacked.loaded.card).length;
     return {
         written,
-        mappingSummary: buildMappingSummary(importedEntries),
+        mappingSummary,
     };
+}
+
+function resolveLorebookImportPath(workspaceRoot: string, root: string, fileSlug: string, classified: EntryClassification): string {
+    if (classified.primaryCategory !== "location") {
+        return path.join(workspaceRoot, root, fileSlug, "index.md");
+    }
+    const nested = locationPathSegments(classified.comment);
+    if (nested.length === 0) {
+        return path.join(workspaceRoot, root, fileSlug, "index.md");
+    }
+    return path.join(workspaceRoot, root, ...nested.map((segment) => slugify(segment)), "index.md");
+}
+
+function locationPathSegments(comment: string): string[] {
+    const normalized = comment
+        .replace(/^[【\[]|[】\]]$/gu, "")
+        .replace(/\([^)]*\)\s*$/u, "")
+        .trim();
+    const parts = normalized.split("-").map((part) => part.trim()).filter(Boolean);
+    const markerIndex = parts.findIndex((part) => /^(?:城镇|地块|冒险区域|封印区|内城区|中城区|外环区|圣都|地点|地区|区域|城市|建筑|房间)$/u.test(part));
+    if (markerIndex < 0 || parts.length <= markerIndex + 1) {
+        return [];
+    }
+    const prefix = parts.slice(0, markerIndex).filter((part) => !/^DLC$/iu.test(part));
+    const suffix = parts.slice(markerIndex + 1);
+    return [...prefix, ...suffix].filter((part) => part.length > 0);
+}
+
+function collectCardBodyMaterials(card: Record<string, unknown>): CardBodyMaterial[] {
+    const data = readObject(card.data);
+    const materials: CardBodyMaterial[] = [];
+    const description = readString(data.description);
+    if (description) {
+        materials.push({filePath: "description.md", title: "Description", content: description});
+    }
+    const scenario = readString(data.scenario);
+    if (scenario) {
+        materials.push({filePath: "scenario.md", title: "Scenario", content: scenario});
+    }
+    const firstMessage = readString(data.first_mes);
+    if (firstMessage) {
+        materials.push({filePath: "first-message.md", title: "First Message", content: firstMessage});
+    }
+    const alternateGreetings = readStringArray(data.alternate_greetings);
+    for (const [index, greeting] of alternateGreetings.entries()) {
+        materials.push({
+            filePath: path.join("alternate-greetings", `${String(index + 1).padStart(3, "0")}.md`),
+            title: `Alternate Greeting ${index + 1}`,
+            content: greeting,
+        });
+    }
+    const messageExamples = readString(data.mes_example);
+    if (messageExamples) {
+        materials.push({filePath: "message-examples.md", title: "Message Examples", content: messageExamples});
+    }
+    return materials;
+}
+
+function renderCardBodyMaterial(material: CardBodyMaterial): string {
+    return `# ${markdownHeadingText(material.title)}
+
+${material.content}
+`;
 }
 
 async function writeRpExtension(unpacked: UnpackedCard, force: boolean): Promise<string[]> {
@@ -782,6 +912,7 @@ function renderInspectMarkdown(inspection: CardInspection): string {
 - regex scripts: ${inspection.counts.regexScripts}
 - tavern helper scripts: ${inspection.counts.tavernHelperScripts}
 - tavern helper variables: ${inspection.counts.tavernHelperVariables}
+- card body materials: ${inspection.mappingSummary.cardBodyMaterials}
 
 ## Dynamic Markers
 
@@ -797,7 +928,8 @@ ${categoryLines || "- none"}
 
 ${targetLines || "- none"}
 
-- skipped dynamic entries: ${inspection.mappingSummary.skippedDynamic}
+- dynamic archived entries: ${inspection.mappingSummary.dynamicArchived}
+- structural markers: ${inspection.mappingSummary.structuralMarkers}
 - needs review: ${inspection.mappingSummary.needsReview}
 
 ## Entries
@@ -820,6 +952,7 @@ function renderUnpackReport(inspection: CardInspection, written: string[]): stri
 - kind: ${inspection.kind}
 - dynamic runtime executed: no
 - worldbook entries: ${inspection.counts.worldbookEntries}
+- card body materials: ${inspection.mappingSummary.cardBodyMaterials}
 
 ## Written Files
 
@@ -843,6 +976,11 @@ function renderImportReport(inspection: CardInspection, written: string[], mappi
         .filter((entry) => DYNAMIC_CATEGORIES.has(entry.primaryCategory))
         .slice(0, 100)
         .map((entry) => `- ${entry.uid}: ${entry.comment} (${entry.primaryCategory}; ${entry.markerKeys.join(", ") || "no marker key"})`)
+        .join("\n");
+    const structuralEntries = inspection.entries
+        .filter((entry) => entry.structuralMarker)
+        .slice(0, 100)
+        .map((entry) => `- ${entry.uid}: ${entry.comment}`)
         .join("\n");
     const reviewEntries = inspection.entries
         .filter((entry) => needsClassificationReview(entry))
@@ -868,8 +1006,10 @@ function renderImportReport(inspection: CardInspection, written: string[], mappi
 
 ${targetLines || "- none"}
 
-- skipped dynamic entries: ${mappingSummary.skippedDynamic}
+- dynamic archived entries: ${mappingSummary.dynamicArchived}
+- structural markers: ${mappingSummary.structuralMarkers}
 - needs review: ${mappingSummary.needsReview}
+- card body materials: ${mappingSummary.cardBodyMaterials}
 
 ### Classification Stats
 
@@ -894,9 +1034,19 @@ ${written.map((filePath) => `- ${filePath}`).join("\n") || "- none"}
 - tavern helper scripts: ${inspection.counts.tavernHelperScripts}
 - tavern helper variables: ${inspection.counts.tavernHelperVariables}
 
-## Skipped Dynamic Content
+## Dynamic Worldbook Archive
 
 ${dynamicEntries || "- none"}
+
+## Structural Markers
+
+${structuralEntries || "- none"}
+
+## Card Body Materials
+
+- files generated during unpack: ${mappingSummary.cardBodyMaterials}
+- target root: reference/silly-tavern/{slug}/card-body/
+- note: alternate_greetings are opening materials, not stable lorebook canon.
 
 ## Classification Review Queue
 
@@ -938,12 +1088,10 @@ ${readString(raw.content) || "（空）"}`);
 
 function renderWorldbookEntryBody(entry: unknown, classified: EntryClassification): string {
     const raw = readObject(entry);
+    const content = readString(raw.content);
     return `# ${markdownHeadingText(classified.comment)}
 
-> 来源：SillyTavern worldbook uid=${classified.uid}；enabled=${classified.enabled ? "yes" : "no"}；constant=${classified.constant ? "yes" : "no"}；primary=${classified.primaryCategory}；confidence=${classified.confidence}；categories=${classified.categories.join(", ")}
-> 分类原因：${classified.reason}
-
-${readString(raw.content) || "（空）"}
+${content}
 `;
 }
 
@@ -979,7 +1127,7 @@ function renderSimulationMigrationReadme(inspection: CardInspection): string {
 ## Source Summary
 
 - worldbook entries: ${inspection.counts.worldbookEntries}
-- skipped dynamic entries: ${inspection.mappingSummary.skippedDynamic}
+- dynamic archived entries: ${inspection.mappingSummary.dynamicArchived}
 - regex scripts: ${inspection.counts.regexScripts}
 - tavern helper scripts: ${inspection.counts.tavernHelperScripts}
 - tavern helper variables: ${inspection.counts.tavernHelperVariables}
@@ -1165,8 +1313,11 @@ function printImportSummary(inspection: CardInspection, workspaceRoot: string, w
     for (const [target, count] of Object.entries(mappingSummary.lorebookTargets)) {
         console.log(`mapping: ${target} (${count})`);
     }
-    if (mappingSummary.skippedDynamic > 0) {
-        console.log(`skipped dynamic entries: ${mappingSummary.skippedDynamic}`);
+    if (mappingSummary.dynamicArchived > 0) {
+        console.log(`dynamic archived entries: ${mappingSummary.dynamicArchived}`);
+    }
+    if (mappingSummary.structuralMarkers > 0) {
+        console.log(`structural markers: ${mappingSummary.structuralMarkers}`);
     }
     if (mappingSummary.needsReview > 0) {
         console.log(`needs review: ${mappingSummary.needsReview}`);

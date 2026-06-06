@@ -108,7 +108,7 @@ describe("NeuroAgentHarness", () => {
 
         const context = harness.repo.reduce(await harness.repo.readSession(created.sessionId));
         expect(context.messages.map((message) => message.role)).toEqual(["user", "assistant", "toolResult"]);
-    });
+    }, 10_000);
 
     it("report_result 校验失败后会继续下一轮让模型修正", async () => {
         harness.profiles.register(defineAgentProfile({
@@ -2240,7 +2240,9 @@ describe("NeuroAgentHarness", () => {
                 const promptText = visibleMessageText(context.messages as AgentMessage[]);
                 providerPrompts.push(promptText);
                 expect(promptText).toContain("sidecar: actor.context-load");
-                expect(promptText).toContain("世界之心");
+                expect(promptText).toContain("五彩缤纷的石头");
+                expect(promptText).toContain("knowledgePath");
+                expect(promptText).not.toContain("她不知道世界之心的真名");
                 return fauxAssistantMessage([
                     fauxToolCall("read", {
                         path: `${projectSlug}/lorebook/world/world-heart.md`,

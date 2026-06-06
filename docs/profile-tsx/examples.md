@@ -70,7 +70,7 @@ export default defineAgentProfile({
         <Import path="AGENTS.md" />
     </Message>
     <Message>
-        <Import path="reference/agent/neurobook-project-guide.md" />
+        <Import path="reference/agent/project-workspace-guide.md" />
     </Message>
 </HistorySet>
 ```

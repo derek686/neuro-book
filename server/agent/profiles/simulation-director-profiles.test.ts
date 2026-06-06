@@ -33,7 +33,6 @@ describe("simulation and director builtin profiles", () => {
             input: {
                 projectPath: "workspace/rp-project",
                 simulationRoot: "rp-project/simulation/",
-                mode: "writing",
             },
             vars: createTestVariableAccessor(),
             catalog: {profiles: [], issues: []},
@@ -64,8 +63,11 @@ describe("simulation and director builtin profiles", () => {
         expect(prompt).toContain("writer_safe_brief");
         expect(prompt).toContain("director_handoff");
         expect(prompt).toContain("不设计长期 Thread / Scene / Plot");
+        expect(prompt).toContain("mode: 每轮任务 prompt 指定");
+        expect(prompt).toContain("AGENTS.md 与 simulation/simulator.md");
+        expect(prompt).toContain("新建 subject 或 entity");
         expect(prompt).toContain("projectPath: workspace/rp-project");
-        expect(prompt).toContain("reference/content/directory-protocol.md");
+        expect(prompt).toContain("reference/content/simulation.md");
     });
 
     it("director 暴露 Plot System 合同和 create_story_plots", async () => {

@@ -33,7 +33,7 @@
 
 - Created this task walkthrough.
 - Renamed root `spec/` to `reference/`.
-- Renamed old `reference/reference/` module to `reference/workspace-reference/`.
+- Renamed old `reference/reference/` module to `reference/workspace-reference/` during the first pass.
 - Updated Import allowlist and Nitro runtime context copy from `spec/` to `reference/`.
 - Rewrote `reference/README.md`, `reference/agent/README.md`, and `reference/content/README.md` as Reference Bookshelf entries.
 - Added stable Agent runtime references for runtime hooks, sidecar profile pass, and harness black-box behavior.
@@ -48,6 +48,12 @@
   - Repointed product docs from `/agent/`, `/profile/`, and `/profile-tsx/` pages to stable `reference/agent/` entries.
   - Rewrote `reference/agent/frontend.md` from the old `/api/agent/threads/**` / `subagent` contract to the current `/api/agent/sessions/**` / linked-agent contract.
   - Updated remaining root reference indexes such as `architecture.md` and `CLAUDE.md` from `spec/` to `reference/`.
+- Renamed `reference/agent/neurobook-project-guide.md` to `reference/agent/project-workspace-guide.md`.
+- Split the Project Workspace directory guide into narrower references:
+  - `reference/content/project-structure.md` is now the top-level overview.
+  - `reference/content/lorebook.md`, `manuscript.md`, `simulation.md` and `content-references.md` own detailed contracts.
+  - `reference/content/directory-protocol.md` is now only a compatibility index.
+- Merged the old workspace-reference module into `reference/content/content-references.md` and removed `reference/workspace-reference/`.
 
 ## Verification
 

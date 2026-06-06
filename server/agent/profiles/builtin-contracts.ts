@@ -15,30 +15,11 @@ export const LeaderDefaultOutputSchema = Type.Object({
 });
 
 /**
- * leader.rp 的实例初始化参数。每轮用户行动仍通过普通 prompt/invoke message 传入。
- */
-export const LeaderRpInputSchema = Type.Object({
-    simulationRoot: Type.Optional(Type.String({description: "可选 simulation 目录路径，必须相对于 Agent cwd。默认使用当前 Project Workspace 下的 simulation/。"})),
-});
-
-/**
- * leader.rp 的结构化输出合同。
- */
-export const LeaderRpOutputSchema = Type.Object({
-    result: Type.Optional(Type.String({description: "可选总结文本。leader.rp 通常直接面向用户输出 writer prose，不要求 report_result。"})),
-});
-
-/**
  * simulator.leader 的实例初始化参数。每轮模拟任务通过 invoke_agent.message 传入。
  */
 export const SimulatorLeaderInputSchema = Type.Object({
     projectPath: Type.String({description: "Project Workspace path, e.g. workspace/silver-dragon-hime."}),
     simulationRoot: Type.Optional(Type.String({description: "Agent cwd-relative simulation root, e.g. silver-dragon-hime/simulation/. Omit to derive from projectPath."})),
-    mode: Type.Optional(Type.Union([
-        Type.Literal("writing"),
-        Type.Literal("rp"),
-        Type.Literal("analysis"),
-    ], {description: "Stable operating mode for this simulator session."})),
 });
 
 /**
@@ -137,16 +118,9 @@ export const SubjectSimulatorInputSchema = Type.Object({
  * simulator.actor 通过 report_result.data 返回的结构化角色反应。
  */
 export const SubjectSimulatorOutputSchema = Type.Object({
-    visible_action: Type.String({description: "角色在场景中可被观察到的动作、神态、姿态或沉默；没有则填空字符串。"}),
+    visible_response: Type.String({description: "角色在场景中可被观察到的动作、神态、姿态、沉默或行为反应；没有则填空字符串。"}),
     spoken_dialogue: Type.String({description: "角色明确说出口的台词；没有则填空字符串。"}),
-    private_intent: Type.String({description: "只给 GM 使用的私下意图、判断或短期目标；没有则填空字符串。"}),
-    emotional_state: Type.String({description: "只给 GM 使用的情绪状态摘要；没有则填空字符串。"}),
-    assumptions: Type.Array(Type.String({description: "角色基于自身知识和本 Tick packet 形成的判断、误解或假设。"}), {description: "没有则返回空数组。"}),
-    questions_to_gm: Type.Array(Type.String({description: "需要 GM 裁决、补充或确认的问题。"}), {description: "没有则返回空数组。"}),
-    event_update: Type.String({description: "本 Tick 后应写入 events.md 的 subject 视角事件流水摘要；没有则填空字符串。"}),
-    knowledge_update: Type.String({description: "本 Tick 后应写入 knowledge.md 的新增认知摘要；没有则填空字符串。"}),
-    mind_update: Type.String({description: "本 Tick 后应写入 mind.md 的当前想法、判断或动机摘要；没有则填空字符串。"}),
-    state_update: Type.String({description: "本 Tick 后应写入 state.md 的位置、持有物、伤势、关系压力或短期目标变化；没有则填空字符串。"}),
+    inner_response: Type.String({description: "角色没有直接说出口的情绪、意图、判断、误解或短期打算；没有则填空字符串。"}),
 });
 
 /**

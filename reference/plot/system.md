@@ -179,6 +179,8 @@ Plot refs 用结构化关系连接剧情对象和内容节点。
 
 Thread / Scene / Plot 的 agent-facing 写法、摘要密度和 Plot 粒度见 [agent-spec.md](agent-spec.md)。
 
+After plot edits, check continuity: character motivation, causal chain, reader information and protagonist information should not be accidentally mixed.
+
 ## Agent Consumption
 
 Agent 写作或规划时按这个顺序读 Plot：

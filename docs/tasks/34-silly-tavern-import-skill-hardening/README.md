@@ -210,7 +210,15 @@ bun run test server/agent/skills/skill-catalog.test.ts server/agent/skills/silly
 
 ## Current Status
 
-Implemented. The canonical English skill exists, the legacy Chinese skill remains as a compatibility entry, the CLI no longer emits new `lorebook/rule` imports, report output now exposes classification review and next steps, and `--rp` writes migration candidates without creating `simulation/` runtime state.
+Implemented and continuing to harden. The canonical English skill exists, the legacy Chinese skill has been removed, the CLI no longer emits new `lorebook/rule` imports, report output exposes classification review and next steps, and `--rp` writes migration candidates without creating `simulation/` runtime state.
+
+The latest importer contract is:
+
+- Stable worldbook entries go to `lorebook/`.
+- Dynamic worldbook entries are archived under `reference/silly-tavern/{slug}/dynamic-worldbook/`; they are no longer skipped.
+- Structure-only markers such as `➡️...开始/结束` remain in raw reference and import report only.
+- Card body materials go to `reference/silly-tavern/{slug}/card-body/`, including `first_mes`, `alternate_greetings`, `mes_example`, `scenario`, and `description`.
+- Stable lorebook outputs do not include ST raw `ext` metadata, generated source quotes, classification reason block, or empty `（空）` placeholder.
 
 ## Walkthrough
 
@@ -222,6 +230,7 @@ Implemented. The canonical English skill exists, the legacy Chinese skill remain
 - 2026-06-03：补齐教程和 RP task 旧口径：用户教程改用 `novel-import-silly-tavern-card`，canonical skill 作为唯一当前入口；task 01 中的导入目标同步为 `lorebook/world/rule`、`lorebook/system`、`lorebook/event` 和新 `simulation-migration/` 文件结构。
 - 2026-06-03：增强分类 review 标记：状态栏/UI/好感度面板等 ST runtime 风险词不会直接进入稳定 `lorebook/system`，而是进入 pending note 与 classification review queue；普通可模拟系统仍可进入 `lorebook/system`。
 - 2026-06-04：skill 命名统一后，删除旧 `SillyTavern角色卡导入` 兼容目录，`scripts/silly-tavern-card.ts` 迁入 `novel-import-silly-tavern-card/scripts/`，测试和文档入口同步使用 canonical path。
+- 2026-06-06：根据命定之诗手动分类经验增强 importer：新增 `species` 分类、comment 命名模式优先规则、system 关键词扩展、location import 阶段自动嵌套、dynamic worldbook 独立归档、结构分隔标记 report-only、card-body 素材归档，并清理稳定 lorebook 中的 ST 原始 metadata 与自动生成正文块。
 
 ## Files Changed
 

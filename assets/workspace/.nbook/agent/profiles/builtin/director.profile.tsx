@@ -59,7 +59,7 @@ export default defineAgentProfile({
                     <Message><Import path="AGENTS.md" /></Message>
                     <Message><Import path="reference/plot/system.md" /></Message>
                     <Message><Import path="reference/plot/agent-spec.md" /></Message>
-                    <Message><Import path="reference/agent/neurobook-project-guide.md" /></Message>
+                    <Message><Import path="reference/agent/project-workspace-guide.md" /></Message>
                 </HistorySet>
                 <ModelContext>
                     <Message>{renderRuntimeInput(ctx.input)}</Message>

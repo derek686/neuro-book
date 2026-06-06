@@ -9,7 +9,7 @@
 ```tsx
 <HistorySet>
     <Message>
-        <Import path="reference/agent/neurobook-project-guide.md" />
+        <Import path="reference/agent/project-workspace-guide.md" />
     </Message>
 </HistorySet>
 ```
@@ -28,7 +28,7 @@ Supported props:
 Rendered text is a Markdown fenced block whose info string is the imported path:
 
 ```text
-```reference/agent/neurobook-project-guide.md
+```reference/agent/project-workspace-guide.md
 ...
 ```
 ```
@@ -36,8 +36,8 @@ Rendered text is a Markdown fenced block whose info string is the imported path:
 If `maxBytes` truncates the import, a short marker is placed before the block:
 
 ```text
-[Import truncated: reference/agent/neurobook-project-guide.md maxBytes=12000]
-```reference/agent/neurobook-project-guide.md
+[Import truncated: reference/agent/project-workspace-guide.md maxBytes=12000]
+```reference/agent/project-workspace-guide.md
 ...
 ```
 ```

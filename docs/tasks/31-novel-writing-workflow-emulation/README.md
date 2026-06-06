@@ -16,7 +16,7 @@
 已把讨论同步到稳定 reference：
 
 - [../../../reference/agent/novel-writing-workflow.md](../../../reference/agent/novel-writing-workflow.md)
-- [../../../reference/agent/neurobook-project-guide.md](../../../reference/agent/neurobook-project-guide.md)
+- [../../../reference/agent/project-workspace-guide.md](../../../reference/agent/project-workspace-guide.md)
 - [../../../reference/content/directory-protocol.md](../../../reference/content/directory-protocol.md)
 
 本轮只同步文档，不改实际 skill 目录名、profile 合同或 Project 模板。
@@ -86,7 +86,7 @@ simulation/runs/
 
 - `docs/tasks/31-novel-writing-workflow-emulation/README.md`
 - `reference/agent/novel-writing-workflow.md`
-- `reference/agent/neurobook-project-guide.md`
+- `reference/agent/project-workspace-guide.md`
 - `reference/agent/README.md`
 - `reference/content/directory-protocol.md`
 - `reference/README.md`

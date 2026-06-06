@@ -1055,7 +1055,7 @@ export class NeuroAgentHarness {
      */
     private async snapshotSystemPrompt(snapshot: SessionSnapshot, context: NeuroSessionContext): Promise<string | undefined> {
         const profile = await this.profiles.get(context.profileKey);
-        if (!this.hasBuiltinHook(profile, "builtin.profilePrompt")) {
+        if (!this.hasBuiltinHook(profile, "builtin.profilePrompt") || !profile.context) {
             return undefined;
         }
         const input = this.profiles.parseInput(profile, snapshot.metadata.input);
@@ -1076,10 +1076,7 @@ export class NeuroAgentHarness {
                 promptUserTurnCount: this.countPromptUserTurns(snapshot),
             },
         };
-        if (profile.context) {
-            return compileProfileSystemPrompt(profile, prepareContext, await profile.context(prepareContext));
-        }
-        return undefined;
+        return compileProfileSystemPrompt(profile, prepareContext, await profile.context(prepareContext));
     }
 
     private async pendingApprovalDto(

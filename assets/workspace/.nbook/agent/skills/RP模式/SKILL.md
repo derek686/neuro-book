@@ -1,9 +1,9 @@
 ---
 name: RP模式
-description: 用于用户想进入 NeuroBook RP/simulation 模式、启动 leader.rp、理解 simulator leader / subject simulator / rp.writer Tick 流程，或让当前 session 临时按 RP 协议工作。
+description: 用于用户想进入 NeuroBook RP/simulation 模式、启动 simulator.leader、理解 simulator leader / subject simulator / rp.writer Tick 流程，或让当前 session 临时按 RP 协议工作。
 when_to_use:
   - 用户说进入 RP、开始 roleplay、跑角色扮演、用 GM 带剧情、和角色互动
-  - 用户询问 leader.rp、simulator.actor、rp.writer、simulation、subject knowledge 或 RP 模式怎么用
+  - 用户询问 simulator.leader、simulator.actor、rp.writer、simulation、subject knowledge 或 RP 模式怎么用
 ---
 
 # RP模式
@@ -21,13 +21,13 @@ when_to_use:
 
 先询问用户选择入口：
 
-1. 新建或切换到 `leader.rp` 会话，由它作为 simulator leader 调度 `simulator.actor` 和 `rp.writer`。
+1. 新建或切换到 `simulator.leader` 会话，由它作为 simulator leader 调度 `simulator.actor` 和 `rp.writer`。
 2. 就地让当前 session 按 RP/simulation 协议工作。第一版只通过 prompt/skill 约束当前 session，不修改 session `profileKey`。
 
-## leader.rp 流程
+## simulator.leader 流程
 
 1. 读取 `simulation/config.yaml`、`simulation/cast.yaml`、`simulation/simulator.md` 和 `simulation/writer.md`。
-2. 根据 `cast.yaml` 创建或复用 `simulator.actor` 会话；每个 subject 只注入自己的 `subject.md`、`events.md`、`knowledge.md`、`mind.md` 与 `state.md`。
+2. 根据 `cast.yaml` 创建或复用 `simulator.actor` 会话；每个 subject 的文件由 actor sidecar 读取和过滤，主扮演 run 只接收 actor-safe context 与 GM packet。
 3. 创建或复用 `rp.writer`，只给它 `simulation/writer.md` 与 simulator leader brief。
 4. 用户发送第一条行动、台词或剧本式指令后，进入 Tick。
 
@@ -49,7 +49,7 @@ when_to_use:
 
 ## 边界
 
-- `leader.rp` 是 simulator leader，可在 GM 裁决后写入 subject `state.md`、`simulation/entities/*` 和必要的 `simulation/runs/*`。
+- `simulator.leader` 是 simulator leader，可在 GM 裁决后写入 subject `state.md`、`simulation/entities/*` 和必要的 `simulation/runs/*`。
 - `simulator.actor` 是 subject simulator；主扮演阶段不读取完整 `simulation/`、`lorebook/`、`reference/` 或其他 subject 文件。
 - `simulator.actor` 的旁路可以维护自己的 `events.md`、`knowledge.md` 与 `mind.md`；`state.md` 与 `entities` 由 simulator leader 裁决。
 - `rp.writer` 只消费 `simulation/writer.md` 和 simulator leader brief，不自主遍历 `simulation/` 或 lorebook。
@@ -67,7 +67,7 @@ when_to_use:
 
 ## 完成标准
 
-- 用户已经选择 `leader.rp` 或就地 RP 入口。
+- 用户已经选择 `simulator.leader` 或就地 RP 入口。
 - `simulation/` 目录存在且最小文件齐全。
 - `cast.yaml` 中至少有 player subject。
 - agent 能解释下一步要读哪些文件、创建哪些 subject simulator、如何开始第一 Tick。

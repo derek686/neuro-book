@@ -589,17 +589,54 @@ describe("workspace-files", () => {
     });
 
     it("workspace node validate 在 Workspace Root 下接受 workspace/<project>/... 路径", async () => {
-        const {stderr} = await execFileAsync("bun", [
-            AGENT_WORKSPACE_SCRIPT_FROM_WORKSPACE_PATH,
-            "node",
-            "validate",
-            "workspace/silver-dragon-hime/manuscript/001-荒野觉醒/001-祭坛苏醒/",
-        ], {
-            cwd: "workspace",
-            encoding: "utf-8",
-        });
+        const workspaceSlug = `node-validate-path-test-${randomUUID()}`;
+        const targetRoot = path.join("workspace", workspaceSlug);
+        const chapterRoot = path.join(targetRoot, "manuscript", "001-volume", "001-chapter");
 
-        expect(stderr).toBe("");
+        try {
+            await fs.mkdir(chapterRoot, {recursive: true});
+            await fs.writeFile(path.join(targetRoot, "project.yaml"), YAML.stringify({
+                kind: "novel",
+                title: "路径校验测试",
+                summary: "测试 Workspace Root 下 workspace/<project>/... 路径",
+            }), "utf-8");
+            await fs.writeFile(path.join(targetRoot, "manuscript", "001-volume", "index.md"), [
+                "---",
+                YAML.stringify(createWorkspaceContentFrontmatterDefaults({
+                    title: "第一卷",
+                    type: "volume",
+                    status: "draft",
+                })).trimEnd(),
+                "---",
+                "",
+                "卷简介",
+            ].join("\n"), "utf-8");
+            await fs.writeFile(path.join(chapterRoot, "index.md"), [
+                "---",
+                YAML.stringify(createWorkspaceContentFrontmatterDefaults({
+                    title: "第一章",
+                    type: "chapter",
+                    status: "draft",
+                })).trimEnd(),
+                "---",
+                "",
+                "章节正文",
+            ].join("\n"), "utf-8");
+
+            const {stderr} = await execFileAsync("bun", [
+                AGENT_WORKSPACE_SCRIPT_FROM_WORKSPACE_PATH,
+                "node",
+                "validate",
+                `workspace/${workspaceSlug}/manuscript/001-volume/001-chapter/`,
+            ], {
+                cwd: "workspace",
+                encoding: "utf-8",
+            });
+
+            expect(stderr).toBe("");
+        } finally {
+            await removeDirectoryWithRetry(targetRoot);
+        }
     });
 
     it("workspace node new 在 Workspace Root 下能读取系统内容节点模板", async () => {
@@ -741,7 +778,7 @@ describe("workspace-files", () => {
             ]));
             expect(result.skippedFiles).toContain("simulation/simulator.md");
             await expect(fs.readFile(path.join(projectRoot, "simulation", "simulator.md"), "utf-8")).resolves.toBe(existingSimulator);
-            await expect(fs.readFile(path.join(projectRoot, "simulation", "config.yaml"), "utf-8")).resolves.toContain("leaderProfile: leader.rp");
+            await expect(fs.readFile(path.join(projectRoot, "simulation", "config.yaml"), "utf-8")).resolves.toContain("leaderProfile: simulator.leader");
             await expect(fs.readFile(path.join(projectRoot, "simulation", "cast.yaml"), "utf-8")).resolves.toContain("sample-npc");
             await expect(fs.readFile(path.join(projectRoot, "simulation", "runs", "current.md"), "utf-8")).resolves.toContain("Current");
             await expect(fs.readFile(path.join(projectRoot, "simulation", "runs", "index.md"), "utf-8")).resolves.toContain("000000");
@@ -1577,6 +1614,12 @@ describe("workspace-files", () => {
             }
             await restoreOptionalFile(syncStatePath, syncStateBackup);
         }
+    });
+
+    it("系统 profile metadata 只来自 compiled manifest", async () => {
+        const legacySystemMetadataPath = path.join("assets", "workspace", ".nbook", "agent", "profiles", ".system-profile-metadata.json");
+
+        await expect(fs.access(legacySystemMetadataPath)).rejects.toMatchObject({code: "ENOENT"});
     });
 
     it("小说目录模板会创建最小 lorebook 骨架且通过内容节点校验", async () => {

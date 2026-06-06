@@ -1,6 +1,6 @@
 # Profile 介绍
 
-Profile 定义一个 Agent 的行为边界。NeuroBook v3 中，profile 就是 agent 类型：创建 `leader.default`、`writer`、`retrieval` 或 `leader.rp`，本质上都是创建某个 profile 的 session。
+Profile 定义一个 Agent 的行为边界。NeuroBook v3 中，profile 就是 agent 类型：创建 `leader.default`、`writer`、`retrieval` 或 `simulator.leader`，本质上都是创建某个 profile 的 session。
 
 普通用户通常只需要选择 profile；profile 作者则需要理解 TSX Profile DSL、工具权限、输入输出 schema、动态上下文、压缩策略、摘要策略和 Runtime Hooks。
 
@@ -43,7 +43,7 @@ workspace/.nbook/agent/profiles/
 | `retrieval` | 内容节点召回和候选判断。 |
 | `summarizer` | 后台生成 session title / summary。 |
 | `leader.assets` | 协助用户理解和维护 user-assets、profile、skill。 |
-| `leader.rp` | 世界模拟 / RP 的 simulator leader。 |
+| `simulator.leader` | 写作模式和 RP 共用的世界模拟主管。 |
 | `simulator.actor` | 单个 subject 的角色扮演 agent。 |
 | `rp.writer` | RP 可见正文渲染。 |
 

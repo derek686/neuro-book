@@ -34,7 +34,7 @@ Agent 回答问题或执行任务时，应按问题类型读取这些文档：
 - [tasks/archived/docker-compose-deployment/README.md](tasks/archived/docker-compose-deployment/README.md)：Docker Compose 部署任务 walkthrough，记录部署模式演进、关键决策和验证记录。
 - [../reference/agent/README.md](../reference/agent/README.md)：Agent 稳定参考入口；profile、prompt、上下文分区、Import 和默认协作协议优先看这里。
 - [../reference/agent/leader-default.md](../reference/agent/leader-default.md)：当前 `leader.default` 的工具、任务、多 Agent、SQL、Plan Mode 和 Skills 操作协议。
-- [../reference/agent/neurobook-project-guide.md](../reference/agent/neurobook-project-guide.md)：Project Workspace、内容节点、lorebook、manuscript、simulation、Plot System 和 workspace node CLI 的 Agent 使用指南。
+- [../reference/agent/project-workspace-guide.md](../reference/agent/project-workspace-guide.md)：Project Workspace 路径、基础内容节点、常用目录和 workspace node CLI 的 Agent 短指南。
 - [../reference/agent/profile-import.md](../reference/agent/profile-import.md)：Profile `<Import />` 共享文本导入节点规范。
 - [../reference/content/README.md](../reference/content/README.md)：内容结构、lorebook / simulation、Markdown 扩展和 retrieval / inject 稳定参考入口。
 - [tasks/02-pi-agent-harness-migration/README.md](tasks/02-pi-agent-harness-migration/README.md)：当前 Pi-based Agent session / event / tool / profile 主路径迁移记录。
@@ -47,7 +47,7 @@ Agent 回答问题或执行任务时，应按问题类型读取这些文档：
 
 如果用户问的是部署问题，优先读本文、README 的 Docker Compose 部分、`docs/tasks/archived/docker-compose-deployment/README.md` 和 `PROJECT-STATUS.md`。Archived walkthrough 记录了部署方案的演进过程，当前执行真相以本文、README 和 `PROJECT-STATUS.md` 为准。
 
-如果用户问的是 Agent 能力、提示词、工具或 workspace 文件语义，先读 `reference/agent/README.md`、`reference/agent/leader-default.md`、`reference/agent/neurobook-project-guide.md`、`reference/agent/profile-import.md` 和 `reference/content/README.md`。需要了解迁移背景、实现演进或历史边界时，再继续读 `docs/tasks/02-pi-agent-harness-migration/README.md`、`docs/tasks/04-tsx-profile-workbench/README.md`、`docs/tasks/06-leader-default-prompt-parity/README.md` 和 `reference/agent/harness.md`。
+如果用户问的是 Agent 能力、提示词、工具或 workspace 文件语义，先读 `reference/agent/README.md`、`reference/agent/leader-default.md`、`reference/agent/project-workspace-guide.md`、`reference/agent/profile-import.md` 和 `reference/content/README.md`。需要了解迁移背景、实现演进或历史边界时，再继续读 `docs/tasks/02-pi-agent-harness-migration/README.md`、`docs/tasks/04-tsx-profile-workbench/README.md`、`docs/tasks/06-leader-default-prompt-parity/README.md` 和 `reference/agent/harness.md`。
 
 当前 Agent 文档阅读时应使用 session / linked agent 心智：正式 HTTP 是 `/api/agent/sessions/**`，前端历史真相来自 session snapshot + JSONL entry tree，SSE 只是增量事件通道。旧 `thread` / `subagent` / `/api/agent/threads/**` / `/api/agent-v3/**` 只在归档文档或迁移说明中出现。
 

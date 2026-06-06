@@ -25,7 +25,7 @@ v3 中 profile 就是 agent 类型。系统不再维护旧式 leader / subagent 
 - `writer`：写正式章节正文，一章节一 agent。
 - `retrieval`：检索和筛选 lorebook / manuscript 内容节点。
 - `researcher`：联网研究，处理最新资料或外部来源核验。
-- `leader.rp`：进入 `simulation/` 世界模拟 / RP。
+- `simulator.leader`：进入 `simulation/` 世界模拟 / RP。
 - `simulator.actor`：扮演单个 subject，只看到角色可知信息。
 - `rp.writer`：把 simulator leader brief 渲染成用户可见 RP 文本。
 

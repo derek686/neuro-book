@@ -212,8 +212,10 @@ describe("assets builtin v3 profiles", () => {
         expect(historyText).toContain("simulation/runs/ticks/{id}-{slug}/prose.md");
         expect(historyText).toContain("```reference/content/markdown-dialect.md");
         expect(historyText).toContain("NeuroBook Markdown Dialect");
-        expect(historyText).toContain("```reference/agent/neurobook-project-guide.md");
-        expect(historyText).toContain("NeuroBook Project Guide");
+        expect(historyText).toContain("```reference/agent/project-workspace-guide.md");
+        expect(historyText).toContain("Project Workspace Guide");
+        expect(historyText).toContain("```reference/plot/system.md");
+        expect(historyText).toContain("Plot System");
         const runtimePrepared = await profile.prepare!({
             session: testSession({
                 systemPrompt: "",

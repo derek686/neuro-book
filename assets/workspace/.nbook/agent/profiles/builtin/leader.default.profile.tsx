@@ -115,7 +115,10 @@ export default defineAgentProfile({
                         <Import path="reference/content/markdown-dialect.md" />
                     </Message>
                     <Message>
-                        <Import path="reference/agent/neurobook-project-guide.md" />
+                        <Import path="reference/agent/project-workspace-guide.md" />
+                    </Message>
+                    <Message>
+                        <Import path="reference/plot/system.md" />
                     </Message>
                 </HistorySet>
                 <ModelContext>

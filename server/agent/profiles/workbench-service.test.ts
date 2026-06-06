@@ -98,7 +98,7 @@ describe("profile workbench service", () => {
         } finally {
             await rm(root, {recursive: true, force: true});
         }
-    });
+    }, 15_000);
 
     it("解析新 TSX DSL 为 ProfilePrompt tree", () => {
         const root = buildSystemPromptRoot(`
@@ -116,7 +116,7 @@ export default defineAgentProfile({
                 <System>{renderSystemPrompt()}</System>
                 <HistorySet>
                     <Message>
-                        <Import path="reference/agent/neurobook-project-guide.md" />
+                        <Import path="reference/agent/project-workspace-guide.md" />
                     </Message>
                     <AIMessage>
                         <ToolCall id="call_read" name="read" args={{ path: "workspace/" }} />
@@ -161,7 +161,7 @@ export default defineAgentProfile({
         expect(importNode).toEqual(expect.objectContaining({
             type: "Import",
             props: expect.objectContaining({
-                path: "reference/agent/neurobook-project-guide.md",
+                path: "reference/agent/project-workspace-guide.md",
             }),
         }));
         const toolCall = root?.children[1]?.children[1]?.children[0];

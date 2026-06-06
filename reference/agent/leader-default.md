@@ -6,7 +6,7 @@
 
 ## Tool Usage
 
-- 读文件用 `read`，不要用 `bash` 调 `cat` / `head` / `tail` / `sed` 代替。大文件按 `read` 返回的 `offset` / `limit` 提示继续读取，直到拿到需要的内容。
+- 读文件用 `read`，不要用 `bash` 调 `cat` / `head` / `tail` / `sed` / `python` 代替。大文件按 `read` 返回的 `offset` / `limit` 提示继续读取，直到拿到需要的内容。
 - 新建文件或完整重写文件用 `write`；局部修改现有文件时不要用 `write` 覆盖整文件。
 - 精确修改单文件用 `edit`。多个分散位置应放在同一次 `edit.edits[]` 中；每个 `oldText` 都按原始文件匹配，不会按前一个 edit 的结果增量匹配。
 - `edit.oldText` 必须唯一、精确、非重叠。相邻或同一块改动合并成一个 edit；不要为了连接远距离改动塞入大段未变化文本。
@@ -34,17 +34,11 @@ Task tools are for execution tracking, not for storing novel facts. Stable world
 
 ## Multi-Agent Collaboration
 
-v3 中 profile 即 agent，不再区分 leader / subagent 类型层级。
-
-协作决策流程：
-
-1. 判断是否真的需要专用 agent。简单问答、一次性小改、当前 leader 能安全完成的任务，不要为了形式创建 agent。
-2. 不熟悉 profile 时先调用 `get_agent_profile`。返回里的 `description` 是 profile 的能力 / 适用场景说明；同时检查 `InputSchema`、`OutputSchema`、`reportResultSchema` 和 `allowedToolKeys`，不要只看参数名猜用途。
-3. 创建前先调用 `get_agent` 查看当前 linked agents。优先复用已有同 profile 且同创建 input 语义的 agent。
-4. 如果候选 agent 的创建 input 不确定，调用 `get_session({ sessionId })` 查看 `metadata.input`、`title` 和 `summary`，再判断是否复用。
-5. 同 profile + 同创建 input 语义时，后续细微修改、继续处理、补充说明、润色和追加要求都用 `invoke_agent` 调用旧 agent。
-6. 没有可复用 agent，或目标 profile 的创建 input 语义变化时，才用 `create_agent` 新建 session。`create_agent` 会自动 link 到当前 session。
-7. `detach_agent` 只解除 owned link，不删除 session；不要把 detach 当成清理数据或重置 agent。
+1. 不熟悉 profile 时先调用 `get_agent_profile`。返回里的 `description` 是 profile 的能力 / 适用场景说明；同时检查 `InputSchema`、`OutputSchema`、`reportResultSchema` 和 `allowedToolKeys`，不要只看参数名猜用途。
+2. 创建前先调用 `get_agent` 查看当前 linked agents。优先复用已有同 profile 且同创建 input 语义的 agent。
+3. 如果候选 agent 的创建 input 不确定，调用 `get_session({ sessionId })` 查看 `metadata.input`、`title` 和 `summary`，再判断是否复用。
+4. 同 profile + 同创建 input 语义时，后续细微修改、继续处理、补充说明、润色和追加要求都用 `invoke_agent` 调用旧 agent。
+5. 没有可复用 agent，或目标 profile 的创建 input 语义变化时，才用 `create_agent` 新建 session。`create_agent` 会自动 link 到当前 session。
 
 工具结果心智：
 
@@ -58,8 +52,6 @@ v3 中 profile 即 agent，不再区分 leader / subagent 类型层级。
 - `writer` 是正文写作专用 agent，采用“一章节一 agent”，不是“一次写作任务一 agent”。
 - 调用 writer 前，先确保章节内容节点已经存在，并且 Plot System 中需要写入本章的 Scene 已挂到该 `chapterPath`。
 - `writer.input.chapterPaths` 必须且只能包含一个章节目录，并且必须是 Agent cwd-relative Project 路径，例如 `silver-dragon-hime/manuscript/001-第一章/`。
-- 不要传 `manuscript/...`，也不要传 `workspace/silver-dragon-hime/...`；writer 会读取该章节的 Chapter Plot，并只写这个章节的 `index.md`。
-- 不要再传 `plotPoints`、`novelId` 或 `outputPath`。
 - 如果 `chapterPaths`、`lorebookEntries`、`constraints`、`writingStylePreset`、`writingReferencePreset` 等创建 input 语义未变，后续润色、局部修改、继续改同一章都 `invoke_agent` 调用旧 writer。
 - 如果切换章节、换一组稳定设定输入、换预设或其他 `WriterInputSchema` 创建值语义变化，则 `create_agent` 新 writer。
 - `writer.lorebookEntries` 只接收内容节点 path 字符串数组。需要设定召回时，先让 retrieval 返回候选判断结果，再由 leader 提取 `entries[].path`，按需要传给 `writer.lorebookEntries`。不要把 retrieval 的 `reason`、`use`、`risk` 或 `note` 传给 writer。
@@ -96,9 +88,10 @@ v3 中 profile 即 agent，不再区分 leader / subagent 类型层级。
 
 ### RP / Simulation Collaboration
 
-- 进入 RP / simulation 模式时优先创建或切换到 `leader.rp`。
-- `leader.rp` 是用户面对的 simulator leader profile，会读取 `simulation/` 目录、调度 `simulator.actor`，并调用 `rp.writer` 生成用户可见正文。
-- `simulator.actor` 和 `rp.writer` 通常只由 `leader.rp` 调用。
+- 进入 RP / simulation 模式时优先创建或切换到 `simulator.leader`。
+- `simulator.leader` 是世界模拟主管，会读取 `simulation/` 目录、调度 `simulator.actor`，并按需调用 `rp.writer` 生成用户可见正文。
+- `leader.default` 不应直接调用 `simulator.actor`；除非用户明确要求调试 actor，否则通过 `simulator.leader` 统一完成 actor-facing 信息过滤和世界裁决。
+- `simulator.actor` 通常只由 `simulator.leader` 调用；`rp.writer` 只消费 simulator brief。
 - 不要把 `rp.writer` 当成普通 writer，也不要让普通 writer 承担 RP Tick 渲染。
 - `simulation/` 目录随默认 Project 模板创建；不再安装独立 roleplay-directory-templates。
 
@@ -164,5 +157,5 @@ ORDER BY "threadSortOrder";
 - [Profile guide](profile-guide.md)
 - [Profile import](profile-import.md)
 - [Profile context](context.md)
-- [NeuroBook Project Guide](neurobook-project-guide.md)
+- [Project Workspace Guide](project-workspace-guide.md)
 - [Markdown dialect](../content/markdown-dialect.md)

@@ -27,7 +27,7 @@
 - `SkillCatalog`、`AgentCatalog`、`SystemReminder`、`MentionedSkillsReminder` 等节点已经通过 `StringFragment` 实现。
 - `System` 只接受 string-like child；`Message` 内容也通过 `renderStringChildren()` 渲染。
 - 因此 `Import` 第一版不需要新增完整复杂节点类型，可以实现为一个可复用的 string fragment helper。
-- `leader.default` 已迁移为通过 `HistorySet > Message > Import` 加载三份共享规范：`reference/agent/leader-default.md`、`reference/content/markdown-dialect.md` 和 `reference/agent/neurobook-project-guide.md`。
+- `leader.default` 已迁移为通过 `HistorySet > Message > Import` 加载三份共享规范：`reference/agent/leader-default.md`、`reference/content/markdown-dialect.md` 和 `reference/agent/project-workspace-guide.md`。
 - 构建脚本已把 repo 根 `AGENTS.md`、`reference/`、`docs/` 明确纳入 compiled runtime 可引用资源。
 - Profile Workbench 已能识别、展示和拖入 `Import` 节点。
 - `reference/agent/README.md` 和 `reference/content/README.md` 已成为 Agent 阅读稳定参考的入口。
@@ -40,7 +40,7 @@
 - 初步命名从 `ContextDoc` 收敛为更通用的 `Import`，因为未来不仅可能加载 Markdown 文本，也可能扩展到图片或其他资源。
 - 初步判断 `Import` 最适合实现为 Profile DSL 的 string-like helper，可放在 `HistorySet` 中的 `<Message>` 内，或必要时放入 `System`。
 - 已实现 `Import` DSL helper、path allowlist、Markdown heading 截取、UTF-8 字节截断和缺失文件可选降级；早期 `<imported-context>` 包裹输出已在后续调整中改为 Markdown fenced block。
-- 已新增稳定参考 `reference/agent/profile-import.md`，并整理 `reference/agent/profile-guide.md`、`reference/agent/context.md` 和 `reference/agent/neurobook-project-guide.md`。
+- 已新增稳定参考 `reference/agent/profile-import.md`，并整理 `reference/agent/profile-guide.md`、`reference/agent/context.md` 和 `reference/agent/project-workspace-guide.md`。
 - 已把 `leader.default` 的共享项目目录说明迁移为 `HistorySet > Message > Import`，避免在 profile prompt 中继续复制大段项目协议。
 - 已补齐 Profile Workbench 的 `Import` 节点库、默认 props、叶子节点规则、inline string 规则和视觉样式。
 - 已从 `leader.default` prompt 中继续抽出共享操作协议，新增 `reference/agent/leader-default.md`，覆盖工具使用、Task Management、多 Agent 协作、writer / retrieval / researcher / RP 调度、SQL、Plan Mode 和 Skills。
@@ -160,14 +160,14 @@ export function Import(props: ImportProps): ProfileStringFragmentNode {
 - `reference/agent/context.md`：active `ProfilePrompt` 拆分规则，说明 `Import` 作为 string fragment 的上下文位置。
 - `reference/agent/README.md`：Agent 稳定参考入口。
 - `reference/agent/leader-default.md`：默认 Leader 可共享的操作协议。
-- `reference/agent/neurobook-project-guide.md`：面向 agent profile 共享导入的 NeuroBook Project Workspace 操作指南。
+- `reference/agent/project-workspace-guide.md`：面向 agent profile 共享导入的 NeuroBook Project Workspace 操作指南。
 - `reference/content/README.md`：内容规范入口。
 - `reference/content/markdown-dialect.md`：NeuroBook Markdown 扩展格式。
 - `reference/README.md`：补充 Agent / Content reference 入口与关键共享规范索引。
 
 入口文档现已调整为：
 
-- Agent prompt / profile / 工具协作 / workspace 文件语义：先读 `reference/agent/README.md`、`reference/agent/leader-default.md`、`reference/agent/neurobook-project-guide.md`、`reference/agent/profile-import.md`。
+- Agent prompt / profile / 工具协作 / workspace 文件语义：先读 `reference/agent/README.md`、`reference/agent/leader-default.md`、`reference/agent/project-workspace-guide.md`、`reference/agent/profile-import.md`。
 - 内容节点 / lorebook / simulation / Markdown 扩展：先读 `reference/content/README.md`。
 - `docs/tasks/**` 继续作为迁移过程和历史决策，不作为默认协议真相源。
 
@@ -199,7 +199,7 @@ export function Import(props: ImportProps): ProfileStringFragmentNode {
 - `reference/agent/profile-import.md`
 - `reference/agent/profile-guide.md`
 - `reference/agent/context.md`
-- `reference/agent/neurobook-project-guide.md`
+- `reference/agent/project-workspace-guide.md`
 - `reference/content/README.md`
 - `reference/content/markdown-dialect.md`
 - `app/components/profile-template-editor/profile-template-editor-config.ts`
@@ -223,12 +223,12 @@ export function Import(props: ImportProps): ProfileStringFragmentNode {
   - `bun scripts/build/prepare-system-profile-metadata.ts`
 - 文档引用审计：
   - `rg -n "tools-reference\\.md|docs/modules/agent/tools-reference|agent/tools-reference" README.md docs reference PROJECT-STATUS.md`：仅剩“旧文档已下线”的说明。
-  - `rg -n "# 工具使用|# Task Management|# 多 Agent|# Markdown 扩展|## Anatomy Lorebook|## Anatomy Manuscript|## Anatomy Plot System|# Shell commands|read_file|write_file|execute_shell" assets/workspace/.nbook/agent/profiles/builtin/leader.default.profile.tsx workspace/.nbook/agent/profiles/builtin/leader.default.profile.tsx server/agent/profiles/leader-assets-profile.test.ts reference/agent/leader-default.md reference/content/markdown-dialect.md reference/agent/neurobook-project-guide.md`：profile 源码中无旧长段落或 v2 工具名；仅 reference/test 中保留预期标题和负断言。
+  - `rg -n "# 工具使用|# Task Management|# 多 Agent|# Markdown 扩展|## Anatomy Lorebook|## Anatomy Manuscript|## Anatomy Plot System|# Shell commands|read_file|write_file|execute_shell" assets/workspace/.nbook/agent/profiles/builtin/leader.default.profile.tsx workspace/.nbook/agent/profiles/builtin/leader.default.profile.tsx server/agent/profiles/leader-assets-profile.test.ts reference/agent/leader-default.md reference/content/markdown-dialect.md reference/agent/project-workspace-guide.md`：profile 源码中无旧长段落或 v2 工具名；仅 reference/test 中保留预期标题和负断言。
 - 未做浏览器验证；Profile Workbench 的本轮补齐只做代码级接入和窄测试覆盖。
 - 全量 `bun run typecheck` 此前仍受既有无关类型问题阻塞，本任务未修改那些问题。
 
 ## TODO / Follow-ups
 
-- 继续观察 `leader.default` 中是否还有适合迁移到 `reference/agent/neurobook-project-guide.md` 的共享项目协议段。
+- 继续观察 `leader.default` 中是否还有适合迁移到 `reference/agent/project-workspace-guide.md` 的共享项目协议段。
 - 未来如果 `Import` 支持图片、多模态内容或 artifact 引用，需要扩展 `as`、渲染格式、Workbench 属性面板和 build allowlist。
 - 后续可以给 Profile Workbench 增加更细的 `Import` 属性编辑器，例如 path picker、heading picker 和 maxBytes 输入。

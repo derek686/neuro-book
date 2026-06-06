@@ -8,7 +8,7 @@
 - [context.md](context.md)：TSX Profile DSL 的上下文分区、历史写入和模型可见顺序。
 - [profile-import.md](profile-import.md)：`<Import />` 节点 API、安全边界、渲染格式和 build contract。
 - [leader-default.md](leader-default.md)：`leader.default` 工具、任务、多 Agent、SQL、Plan Mode 和 Skills 操作协议。
-- [neurobook-project-guide.md](neurobook-project-guide.md)：Project Workspace、内容节点、lorebook、manuscript、simulation、Plot System 和 workspace node CLI 的 Agent 使用指南。
+- [project-workspace-guide.md](project-workspace-guide.md)：Agent 使用 Project Workspace 文件工具的短指南，覆盖路径、基础内容节点和常用目录。
 - [novel-writing-workflow.md](novel-writing-workflow.md)：写作模式标准流程、emulation 使用边界、小说 workflow skill 分层和 runs 产物建议。
 
 ## Runtime
@@ -24,6 +24,7 @@
 
 - 实现或修改 profile：先读 [profile-guide.md](profile-guide.md)，再读 [context.md](context.md) 和 [profile-import.md](profile-import.md)。
 - 处理默认 Leader prompt、工具、writer / retrieval / researcher、Plan Mode 或 Skills：读 [leader-default.md](leader-default.md)。
-- 处理 Project Workspace 文件、内容节点、lorebook、manuscript、simulation 或 Plot：读 [neurobook-project-guide.md](neurobook-project-guide.md)。
+- 处理 Project Workspace 文件、内容节点、lorebook、manuscript 或 simulation：先读 [project-workspace-guide.md](project-workspace-guide.md)，需要完整目录协议时读 [../content/project-structure.md](../content/project-structure.md)。
+- 处理 Plot System：读 [../plot/system.md](../plot/system.md) 和 [../plot/agent-spec.md](../plot/agent-spec.md)。
 - 处理小说写作流程、剧情推进、emulation tick 或 workflow skill 命名：读 [novel-writing-workflow.md](novel-writing-workflow.md)。
 - 处理 harness 行为、sidecar、runtime hooks 或队列语义：先读 [harness-black-box-contract.md](harness-black-box-contract.md)，再读 [runtime-hooks.md](runtime-hooks.md) 和 [sidecar-profile-pass.md](sidecar-profile-pass.md)。
