@@ -4,7 +4,9 @@
 
 本文记录 NeuroBook RP 模式的目录结构和运行协议设计。本轮设计 roleplay 优先，写作模式只作为共享设定资产来源，不展开详细写作流程。
 
-2026-06-07 update: 本文是早期设计记录，不再作为当前 RP/simulation 合同。当前合同见 [README.md](README.md) 顶部 Current Target 和 [reference/content/simulation.md](../../../reference/content/simulation.md)：Project 模板不再生成 `simulation/config.yaml`、`simulation/cast.yaml`、`simulation/simulator.md` 或 `simulation/writer.md`；profile 专用说明已经迁到 `agent-context/`，`simulation/` 只保留 runtime state；`leader.rp` 已删除，当前 RP / writing 共享入口是 `simulator.leader`。
+2026-06-07 update: 本文是早期设计记录，不再作为当前 RP/simulation 合同。当前合同见 [README.md](README.md) 顶部 Current Target 和 [reference/content/simulation.md](../../../reference/content/simulation.md)：Project 模板不再生成 `simulation/config.yaml`、`simulation/cast.yaml`、`simulation/simulator.md` 或 `simulation/writer.md`；profile 专用说明已经迁到 `agent-context/`，`simulation/` 只保留 runtime state。
+
+2026-06-09 update: 新合同只使用 `rp.leader` 作为 RP 用户交流、开局引导和陪伴主持层；`simulator.leader` 继续作为世界模拟和裁决内核。本文下方的 `leader.rp` / `rp.gm` 仍是早期设计记录中的旧名，不作为当前推荐合同。
 
 当前约束：
 

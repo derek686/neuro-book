@@ -125,7 +125,7 @@ describe("assets builtin v3 profiles", () => {
         expect(profile.allowedToolKeys).not.toContain("web_fetch");
         expect(profile.allowedToolKeys).not.toContain("subject_event_append");
         expect(profile.allowedToolKeys).not.toContain("subject_rag_search");
-        expect(profile.allowedToolKeys).not.toContain("memory_bio");
+        expect(profile.allowedToolKeys).not.toContain("subject_memory_update");
         expect(prompt).toContain("默认 Leader Agent");
         expect(prompt).toContain("用户是主创");
         expect(prompt).toContain("共享规范");
@@ -744,8 +744,12 @@ describe("assets builtin v3 profiles", () => {
                 ?.filter((message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult")
                 .map(messageText)
                 .join("\n") ?? "";
+            const writerInputContext = historyContext.slice(historyContext.indexOf("<writer_input_context>"));
 
             expect(historyContext).toContain("<writer_input_context>");
+            expect(historyContext).toContain("```assets/workspace/.nbook/agent/skills/stop-slop/SKILL.md");
+            expect(historyContext).toContain("# Stop Slop");
+            expect(historyContext).toContain("Eliminate predictable AI writing patterns from prose.");
             expect(historyContext).toContain("<chapter_target>");
             expect(historyContext).toContain(`indexPath: ${projectSlug}/manuscript/001-chapter/index.md`);
             expect(historyContext).not.toContain(`indexPath: workspace/${projectSlug}`);
@@ -754,9 +758,9 @@ describe("assets builtin v3 profiles", () => {
             expect(historyContext).toContain("主角正文设定");
             expect(historyContext).toContain("当前状态正文");
             expect(historyContext).toContain("statusNote");
-            expect(historyContext).not.toContain("retrieval");
-            expect(historyContext).not.toContain("privateNote");
-            expect(historyContext).not.toContain("visibility");
+            expect(writerInputContext).not.toContain("retrieval");
+            expect(writerInputContext).not.toContain("privateNote");
+            expect(writerInputContext).not.toContain("visibility");
             expect(prepared.modelContextMessages ?? []).toHaveLength(0);
         } finally {
             await rm(workspaceRoot, {recursive: true, force: true});

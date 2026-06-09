@@ -20,7 +20,7 @@ Sidecar 不适合确定性上下文注入。确定性内容应优先用 profile 
 `simulator.actor` 已接入两个典型 sidecar：
 
 - `actor.context-load`：主 run 前读取小型 subject 文件，调用 `subject_rag_search` 检索当前 subject 的 `events.jsonl` / `memory.jsonl`，再整理 actor-safe context。
-- `actor.memory-save`：主 run 后通过 `subject_event_append` 追加 `events.jsonl`，通过 `memory_bio` 维护 `memory.jsonl`，并更新 `mind.md`。
+- `actor.memory-save`：主 run 后通过 `subject_event_append` 追加 `events.jsonl`，通过 `subject_memory_update` 维护 `memory.jsonl`，并更新 `mind.md`。
 
 主 run 仍保持角色扮演纯度。actor 不直接读取完整 `simulation/`、`lorebook/`、`reference/` 或其他 subject。
 

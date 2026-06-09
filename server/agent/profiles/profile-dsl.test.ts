@@ -476,6 +476,36 @@ describe("profile TSX DSL", () => {
         expect(text).not.toContain("# NeuroBook Reference Bookshelf");
     });
 
+    it("Import 可导入系统 skill 文档", async () => {
+        const profile = defineAgentProfile({
+            manifest: {
+                key: "test.import-system-skill",
+                name: "Import System Skill",
+            },
+            inputSchema: Type.Object({}),
+            allowedToolKeys: [],
+            context() {
+                return ProfilePrompt({
+                    children: HistorySet({
+                        children: Message({
+                            children: Import({
+                                path: "assets/workspace/.nbook/agent/skills/stop-slop/SKILL.md",
+                                required: true,
+                            }),
+                        }),
+                    }),
+                });
+            },
+        });
+
+        const plan = await profile.prepare!(context());
+        const text = (plan.historyInitMessages ?? []).map(messageText).join("\n");
+
+        expect(text).toContain("```assets/workspace/.nbook/agent/skills/stop-slop/SKILL.md");
+        expect(text).toContain("# Stop Slop");
+        expect(text).toContain("Eliminate predictable AI writing patterns from prose.");
+    });
+
     it("Import 缺失文件默认渲染空消息，required=true 时抛错，并继续拒绝越界路径", async () => {
         const optionalProfile = defineAgentProfile({
             manifest: {
@@ -553,7 +583,7 @@ describe("profile TSX DSL", () => {
                 });
             },
         });
-        await expect(disallowedProfile.prepare!(context())).rejects.toThrow("AGENTS.md");
+        await expect(disallowedProfile.prepare!(context())).rejects.toThrow("assets/workspace/.nbook/agent/skills");
     });
 
     it("SkillCatalog 只渲染 skills，不渲染 agent profiles", async () => {
@@ -897,7 +927,9 @@ describe("profile TSX DSL", () => {
             },
         });
 
-        expect((exitPlan.appendingMessages ?? []).map(messageText).join("\n")).toContain("## Exited Plan Mode");
+        const exitText = (exitPlan.appendingMessages ?? []).map(messageText).join("\n");
+        expect(exitText).toContain("## Exited Plan Mode");
+        expect(exitText).not.toContain("Plan mode still active");
         expect((reentryPlan.appendingMessages ?? []).map(messageText).join("\n")).toContain("## Re-entering Plan Mode");
     });
 
@@ -927,6 +959,7 @@ describe("profile TSX DSL", () => {
             ...context(),
             session: {
                 ...context().session,
+                projectPath: "workspace/alpha",
                 planModeActive: true,
                 customState: {
                     "profileState.test.plan-mode-soft-toggle": {
@@ -944,6 +977,10 @@ describe("profile TSX DSL", () => {
 
         expect(text).toContain("## Thread Work Directory");
         expect(text).toContain("## Restrictions");
+        expect(text).toContain("workspace/alpha/.agent/plan");
+        expect(text).toContain("alpha/.agent/plan/<slug>.md");
+        expect(text).toContain("planFilePath like .agent/plan/<slug>.md");
+        expect(text).toContain("approval UI displays that Project Workspace file");
     });
 
     it("PlanModeReminder 支持四种子节点插槽覆盖默认文案", async () => {

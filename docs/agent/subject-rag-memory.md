@@ -69,7 +69,7 @@ subject 侧 `events.md` / `knowledge.md` 是旧合同，当前运行时不再读
 4. 它自己 rerank、去重、过滤和压缩。
 5. 它把少量相关记忆注入 `<actor_sidecar_context>`。
 6. actor 主 run 只根据 actor-facing packet 和这个 sidecar context 扮演角色。
-7. 主 run 后，`actor.memory-save` 追加新 events，并在稳定认知变化时调用 `memory_bio` 维护 `memory.jsonl`。
+7. 主 run 后，`actor.memory-save` 追加新 events，并在稳定认知变化时调用 `subject_memory_update` 维护 `memory.jsonl`。
 
 `actor.context-load` 的注入会写入 actor session，所以后续 run 和 compaction 也能看到这次整理过的上下文。
 

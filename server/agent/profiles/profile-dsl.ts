@@ -4,7 +4,7 @@ import type {AgentToolCall} from "@earendil-works/pi-agent-core";
 import type {AgentMessage, AssistantMessage, JsonValue, Message, ToolResultMessage} from "nbook/server/agent/messages/types";
 import {createAssistantTextMessage, createTextToolResult, createUserMessage, messageText} from "nbook/server/agent/messages/message-utils";
 import type {AgentCatalogItem, AgentProfile, ProfileCompactionPlan, ProfilePrepareContext, ProfileTurnPlan} from "nbook/server/agent/profiles/types";
-import {planModeDirectory} from "nbook/server/agent/plan-mode-path";
+import {planModeDirectory, planModeToolDirectory} from "nbook/server/agent/plan-mode-path";
 import {AGENT_PLAN_MODE_STATE_KEY, AGENT_TASKS_STATE_KEY} from "nbook/server/agent/session/custom-state-keys";
 import type {NeuroSessionContext, SessionEntryDraft} from "nbook/server/agent/session/types";
 import type {ProfileVariablePathInput, VariableNamespace} from "nbook/server/agent/variables/types";
@@ -104,7 +104,7 @@ export type ProfileStringFragmentNode = {
 export type ProfileImportAs = "text";
 
 export type ProfileImportProps = {
-    /** Repo / app root 相对路径。第一版只允许 AGENTS.md、reference/** 和 docs/**。 */
+    /** Repo / app root 相对路径。允许 AGENTS.md、reference/**、docs/** 和系统 skill 文档。 */
     path: string;
     /** 可选 Markdown 标题文本；设置后只导入该标题段落。 */
     heading?: string;
@@ -471,7 +471,7 @@ export function SqlSchemaSummary(props: {text?: string | ((ctx: ProfilePrepareCo
 }
 
 /**
- * 导入共享文本上下文。适合在 HistorySet 的 Message 中显式加载 reference/docs/AGENTS.md。
+ * 导入共享文本上下文。适合在 HistorySet 的 Message 中显式加载 reference/docs/AGENTS.md 或系统 skill。
  */
 export function Import(props: ProfileImportProps): ProfileStringFragmentNode {
     return {
@@ -1306,13 +1306,16 @@ function normalizeImportPath(input: string): string {
         throw new Error(`Import.path 不允许使用 .. 越界：${input}`);
     }
     if (!isAllowedImportPath(normalized)) {
-        throw new Error(`Import.path 第一版只允许 AGENTS.md、reference/** 或 docs/**：${input}`);
+        throw new Error(`Import.path 只允许 AGENTS.md、reference/**、docs/** 或 assets/workspace/.nbook/agent/skills/**：${input}`);
     }
     return normalized;
 }
 
 function isAllowedImportPath(path: string): boolean {
-    return path === "AGENTS.md" || path.startsWith("reference/") || path.startsWith("docs/");
+    return path === "AGENTS.md"
+        || path.startsWith("reference/")
+        || path.startsWith("docs/")
+        || path.startsWith("assets/workspace/.nbook/agent/skills/");
 }
 
 async function readImportFile(path: string, required: boolean): Promise<{exists: true; text: string} | {exists: false}> {
@@ -1956,8 +1959,15 @@ function PlanModeReminderText(props: {stateKey: string; slots?: Partial<Record<P
             const kind = typeof planModeState.reminderKind === "string" ? planModeState.reminderKind : active ? "full" : "";
             const workDirectory = typeof planModeState.workDirectory === "string"
                 ? planModeState.workDirectory
-                : planModeDirectory(ctx.session.workspaceRoot).replace(/\\/g, "/");
-            return renderPlanModeReminderText(ctx, kind, workDirectory, props.slots ?? {});
+                : planModeDirectory({
+                    workspaceRoot: ctx.session.workspaceRoot,
+                    projectPath: ctx.session.projectPath,
+                }).replace(/\\/g, "/");
+            const toolDirectory = planModeToolDirectory({
+                workspaceRoot: ctx.session.workspaceRoot,
+                projectPath: ctx.session.projectPath,
+            });
+            return renderPlanModeReminderText(ctx, kind, workDirectory, toolDirectory, props.slots ?? {});
         },
     };
 }
@@ -1966,6 +1976,7 @@ async function renderPlanModeReminderText(
     ctx: ProfilePrepareContext<any>,
     kind: string,
     workDirectory: string,
+    toolDirectory: string,
     slots: Partial<Record<PlanModeSlotKind, ProfileDslChild[]>>,
 ): Promise<string> {
     if (!kind) {
@@ -1990,6 +2001,7 @@ async function renderPlanModeReminderText(
             "Plan mode still active (see full instructions earlier in conversation).",
             "This project uses soft Plan Mode: follow the restriction yourself even though tools are still visible.",
             `Read-only except optional Markdown work files under ${workDirectory}. Do not modify other files, configs, plot data, database data, or commits.`,
+            `When using file tools from the Workspace Root cwd, write or edit plan files via ${toolDirectory}/<slug>.md. For exit_plan_mode, pass planFilePath as .agent/plan/<slug>.md so the approval UI can preview the Project Workspace file.`,
             "Do not create or invoke Explore agents.",
             "Keep the user informed in chat: summarize important findings, unresolved decisions, and the current plan.",
             `For implementation planning, keep the plan in chat and, when the work is non-trivial, capture the reviewable plan, walkthrough, or research notes in a Markdown file under ${workDirectory}. It is the Project Workspace shared plan directory, not a session-specific directory.`,
@@ -2015,6 +2027,7 @@ async function renderPlanModeReminderText(
         "## Thread Work Directory",
         "",
         `The Project Workspace Plan Mode directory is ${workDirectory}. It can contain plan files, walkthrough files, or research notes for this project.`,
+        `When using file tools from the Workspace Root cwd, write plan files via ${toolDirectory}/<slug>.md. The exit_plan_mode planFilePath argument must still be Project Workspace relative, for example .agent/plan/<slug>.md, so the approval UI can preview the file.`,
         "No file is bound when entering Plan Mode. Choose a short readable Markdown file name in this directory when the task needs persisted planning or walkthrough notes.",
         "If a relevant Markdown file already exists in this exact plan directory, you can read it and make incremental edits using read and edit.",
         "This directory is the only place you may create or edit files while Plan Mode is active. Do not create files just for formality for small non-editing tasks.",
@@ -2039,7 +2052,7 @@ async function renderPlanModeReminderText(
         "3. Ask the user via request_user_input only when an unresolved decision cannot be discovered from the repo and materially changes the implementation.",
         `4. Present a concise execution-ready plan in chat. For non-trivial implementation work, also write or update a readable Markdown plan, walkthrough, or research note under ${workDirectory}; the file name is your choice and the system will not generate a random slug.`,
         "5. Before exit_plan_mode, briefly report the plan status in chat and cite the Markdown file path when you wrote one. If you skip a file because the task is only a small non-editing task, say that briefly before requesting approval.",
-        "6. Call exit_plan_mode when the plan is complete and ready for approval. The tool can request approval from the visible chat plan, and planFilePath should point to a Markdown file under .agent/plan/ when one should be previewed.",
+        "6. Call exit_plan_mode when the plan is complete and ready for approval. When a plan file exists, pass planFilePath like .agent/plan/<slug>.md so the approval UI displays that Project Workspace file.",
         "7. After approval, implement from the approved chat plan or the approved Markdown file shown during exit approval.",
         "",
         "The user explicitly requested no Explore agent for this project Plan Mode.",

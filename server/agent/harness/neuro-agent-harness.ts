@@ -1175,7 +1175,11 @@ export class NeuroAgentHarness {
         if (!planFilePath.trim()) {
             return base;
         }
-        const target = resolvePlanModeFile(snapshot.metadata.workspaceRoot, planFilePath);
+        const target = resolvePlanModeFile({
+            workspaceRoot: snapshot.metadata.workspaceRoot,
+            projectPath: snapshot.metadata.projectPath,
+            planFilePath,
+        });
         return {
             ...base,
             planFilePath: target.displayPath,
@@ -1212,7 +1216,10 @@ export class NeuroAgentHarness {
         return {
             active,
             reminderKind,
-            workDirectory: planModeDirectory(snapshot.metadata.workspaceRoot).replace(/\\/g, "/"),
+            workDirectory: planModeDirectory({
+                workspaceRoot: snapshot.metadata.workspaceRoot,
+                projectPath: snapshot.metadata.projectPath,
+            }).replace(/\\/g, "/"),
             lastTransition,
             hasExited,
             updatedAt: new Date().toISOString(),
@@ -1274,6 +1281,13 @@ export class NeuroAgentHarness {
         if (body.command === "plan") {
             const active = body.active;
             const context = this.repo.reduce(snapshot);
+            const previous = context.customState[AGENT_PLAN_MODE_STATE_KEY];
+            const previousRecord = previous && typeof previous === "object" && !Array.isArray(previous)
+                ? previous as Record<string, JsonValue>
+                : {};
+            const reminderKind = active
+                ? previousRecord.hasExited ? "reentry_full" : "full"
+                : "exit";
             await this.executeWritePlan({
                 target: {sessionId},
                 cause: "command.plan",
@@ -1288,7 +1302,9 @@ export class NeuroAgentHarness {
                         {
                             type: "custom",
                             key: AGENT_PLAN_MODE_STATE_KEY,
-                            value: this.planModeState(snapshot, context, active, active ? "full" : "sparse", "ui_plan_toggle"),
+                            value: this.planModeState(snapshot, context, active, reminderKind, "ui_plan_toggle", {
+                                hasExited: !active ? true : undefined,
+                            }),
                         },
                     ],
                 }],
@@ -2594,7 +2610,7 @@ export class NeuroAgentHarness {
             const toolCall = input.toolCalls[index]!;
             if (this.tools.approvalToolKeys().includes(toolCall.name)) {
                 await flushSegment();
-                const approvalError = await this.validateApprovalTool(input.allowedToolKeys, input.workspaceRoot, toolCall);
+                const approvalError = await this.validateApprovalTool(input.allowedToolKeys, input.workspaceRoot, input.projectPath, toolCall);
                 if (approvalError) {
                     const toolResult = createTextToolResult({
                         toolCallId: toolCall.id,
@@ -2840,7 +2856,7 @@ export class NeuroAgentHarness {
         }));
     }
 
-    private async validateApprovalTool(allowedToolKeys: string[], workspaceRoot: string, toolCall: AgentToolCall): Promise<string | null> {
+    private async validateApprovalTool(allowedToolKeys: string[], workspaceRoot: string, projectPath: string | undefined, toolCall: AgentToolCall): Promise<string | null> {
         const tool = this.tools.get(toolCall.name);
         if (!tool) {
             return `Tool ${toolCall.name} not found`;
@@ -2850,7 +2866,11 @@ export class NeuroAgentHarness {
         }
         if (toolCall.name === "exit_plan_mode" && typeof toolCall.arguments.planFilePath === "string" && toolCall.arguments.planFilePath.trim()) {
             try {
-                await readFile(resolvePlanModeFile(workspaceRoot, toolCall.arguments.planFilePath).absolutePath, "utf-8");
+                await readFile(resolvePlanModeFile({
+                    workspaceRoot,
+                    projectPath,
+                    planFilePath: toolCall.arguments.planFilePath,
+                }).absolutePath, "utf-8");
             } catch (error) {
                 return error instanceof Error ? error.message : String(error);
             }

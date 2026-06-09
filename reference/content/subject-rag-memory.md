@@ -62,9 +62,9 @@ Subject memory 工具只给 sidecar 使用。`simulator.actor` 主 run 不直接
 - 标记该 subject 的 `events` source dirty。
 - 避免 agent 直接手写 JSONL 格式。
 
-`memory_bio`：
+`subject_memory_update`：
 
-- 调用方只报告 subject-facing facts，不指定“合并 A 到 B”或 JSON Patch 操作。
+- 调用方只报告 subject-facing facts 数组，不指定“合并 A 到 B”或 JSON Patch 操作。
 - 工具读取当前 `memory.jsonl`。
 - 调用真实 `memory.curator` profile 产出 JSON Patch。
 - 工具应用 patch 后校验 `topic`、`view`、`aliases` 和重复 topic。
@@ -158,7 +158,7 @@ Agent runtime 读取配置时必须使用 `workspaceRoot + projectPath` 合并 P
 `actor.memory-save` 在 `settleRun` 阶段执行：
 
 1. 使用 `subject_event_append` 追加本轮 subject-facing 经历。
-2. 若稳定认知变化，调用 `memory_bio` 维护 `memory.jsonl`。
+2. 若稳定认知变化，调用 `subject_memory_update` 维护 `memory.jsonl`。
 3. 必要时更新 `mind.md`。
 4. 不更新 `state.md`；位置、伤势、持有物等由 `simulator.leader` 裁决。
 

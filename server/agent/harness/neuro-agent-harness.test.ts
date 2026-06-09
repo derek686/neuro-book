@@ -2813,11 +2813,11 @@ describe("NeuroAgentHarness", () => {
             },
         });
         rpHarness.tools.register({
-            key: "memory_bio",
-            name: "memory_bio",
+            key: "subject_memory_update",
+            name: "subject_memory_update",
             label: "Curate Subject Memory",
             executionMode: "sequential",
-            description: "test memory bio",
+            description: "test subject memory update",
             parameters: Type.Object({}),
             async executeWithContext() {
                 await writeFile(join(actorRoot, "memory.jsonl"), "{\"topic\":\"世界之心\",\"view\":\"我知道主角把一块疑似被称为世界之心的五彩石交给了我，但我不知道它的隐藏真相。\"}\n", "utf-8");
@@ -2904,10 +2904,10 @@ describe("NeuroAgentHarness", () => {
                             text: "主角把一块疑似被称为世界之心的五彩石交给了她。",
                         }],
                     }, {id: "memory-append-event"}),
-                    fauxToolCall("memory_bio", {
+                    fauxToolCall("subject_memory_update", {
                         subjectPath: `${projectSlug}/simulation/subjects/heroine`,
-                        facts: "主角把一块疑似被称为世界之心的五彩石交给了她；她仍不知道隐藏真相。",
-                    }, {id: "memory-bio"}),
+                        facts: ["主角把一块疑似被称为世界之心的五彩石交给了她。", "她仍不知道隐藏真相。"],
+                    }, {id: "subject-memory-update"}),
                     fauxToolCall("edit", {
                         path: `${projectSlug}/simulation/subjects/heroine/mind.md`,
                         edits: [{
@@ -4355,6 +4355,9 @@ describe("NeuroAgentHarness", () => {
     });
 
     it("Plan Mode 使用 Project Workspace .agent/plan 并支持 exit preview", async () => {
+        const workspaceRoot = resolve(root, "workspace").replaceAll("\\", "/");
+        const projectPath = "workspace/alpha";
+        const projectRoot = join(workspaceRoot, "alpha");
         harness.profiles.register(defineAgentProfile({
             manifest: {
                 key: "test.plan-mode-preview",
@@ -4369,7 +4372,8 @@ describe("NeuroAgentHarness", () => {
         const created = await harness.createAgent({
             profileKey: "test.plan-mode-preview",
             input: {},
-            workspaceRoot: root,
+            workspaceRoot,
+            projectPath,
         });
         await harness.runCommand(created.sessionId, {
             command: "plan",
@@ -4378,10 +4382,14 @@ describe("NeuroAgentHarness", () => {
         const context = harness.repo.reduce(await harness.repo.readSession(created.sessionId));
         const planModeState = context.customState[AGENT_PLAN_MODE_STATE_KEY] as Record<string, unknown>;
 
-        expect(planModeState.workDirectory).toBe(`${root.replace(/\\/g, "/")}/.agent/plan`);
+        expect(planModeState.workDirectory).toBe(`${projectRoot.replace(/\\/g, "/")}/.agent/plan`);
 
-        await mkdir(join(root, ".agent", "plan"), {recursive: true});
-        await writeFile(join(root, ".agent", "plan", "preview.md"), "# Preview Plan\n\n- one\n", "utf-8");
+        await mkdir(join(workspaceRoot, ".nbook"), {recursive: true});
+        await writeFile(join(workspaceRoot, ".nbook", "config.json"), "{}", "utf-8");
+        await mkdir(join(projectRoot, ".agent", "plan"), {recursive: true});
+        await mkdir(join(projectRoot, ".nbook"), {recursive: true});
+        await writeFile(join(projectRoot, ".nbook", "config.json"), "{}", "utf-8");
+        await writeFile(join(projectRoot, ".agent", "plan", "preview.md"), "# Preview Plan\n\n- one\n", "utf-8");
         faux.setResponses([
             fauxAssistantMessage([
                 fauxToolCall("exit_plan_mode", {
@@ -4404,7 +4412,47 @@ describe("NeuroAgentHarness", () => {
             planFilePath: ".agent/plan/preview.md",
             planContent: "# Preview Plan\n\n- one\n",
         }));
-    });
+    }, 10_000);
+
+    it("手动退出 Plan Mode 后注入 exit reminder 而不是 still active", async () => {
+        harness.profiles.register(defineAgentProfile({
+            manifest: {
+                key: "test.plan-mode-manual-exit",
+                name: "Plan Mode Manual Exit",
+            },
+            inputSchema: Type.Object({}),
+            allowedToolKeys: [],
+            context() {
+                return ProfilePrompt({
+                    children: [
+                        HistorySet({children: Message({children: "history"})}),
+                    ],
+                });
+            },
+        }), false);
+        const created = await harness.createAgent({
+            profileKey: "test.plan-mode-manual-exit",
+            input: {},
+            workspaceRoot: root,
+        });
+
+        await harness.runCommand(created.sessionId, {
+            command: "plan",
+            active: true,
+        });
+        await harness.runCommand(created.sessionId, {
+            command: "plan",
+            active: false,
+        });
+
+        const snapshot = await harness.getSessionSnapshot(created.sessionId);
+        const context = harness.repo.reduce(await harness.repo.readSession(created.sessionId));
+        const planModeState = context.customState[AGENT_PLAN_MODE_STATE_KEY] as Record<string, unknown>;
+
+        expect(snapshot.planModeActive).toBe(false);
+        expect(planModeState.reminderKind).toBe("exit");
+        expect(planModeState.hasExited).toBe(true);
+    }, 10_000);
 
     it("exit_plan_mode preview 拒绝 .agent/plan 外的计划路径", async () => {
         harness.profiles.register(defineAgentProfile({

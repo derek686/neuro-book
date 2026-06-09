@@ -342,7 +342,7 @@
 - Nitro runtime vendor seed 补入 `undici`，保证 Product Payload 直接启动 `.output/server/index.mjs` 时不缺服务端 fetch 依赖。
 - Windows Nuxt build 优化采用 `nitro.externals.trace=false`，避免 Nitro/node-file-trace 在 Windows 上扫描重 provider SDK 依赖树；由于该模式会把 external import 写成构建机根 `node_modules` 的 file URL，`patch-nitro-runtime-deps.mjs` 会先把这些 URL 改为 `.output/server/node_modules` 相对 import，再从 Nitro 产物扫描 external package seed 并复制 runtime vendor。
 - Product 内的 workspace agent script 会从 `.output/server/scripts/agent` 回到 Product Root 的 `assets/workspace/.nbook/templates` 定位系统 Project 模板。
-- `Update Neuro Book.cmd` 不再 `git pull`；它会查询 GitHub latest release，下载 `neuro-book-windows-x64.zip` 和 `SHA256SUMS`，校验 SHA256 后备份旧 `app/`、`launcher/`、根启动脚本和 `portable-release.json`，再切换新版并保留 `data/`。
+- `Update Neuro Book.cmd` 不再 `git pull`；它会查询 GitHub Releases，列出带 `neuro-book-windows-x64.zip` 和 `SHA256SUMS` 的 stable / canary / alpha / beta / rc 版本供用户选择，校验 SHA256 后备份旧 `app/`、`launcher/`、根启动脚本和 `portable-release.json`，再切换新版并保留 `data/`。
 - Windows Launcher 自动更新保留当前 `runtime/bun/`，避免在 update 命令运行中替换正在使用的 `bun.exe`；`portable-release.json` 会记录 `runtimeKind: "bun"`、packaged Bun version 和当前保留的 runtime version。
 - `Rebuild Neuro Book.*` 不再打包，因为 Product Portable 不支持本机 build。
 - 正式部署模式重设为 Product Portable、Product Bun、Product Docker/ghcr、Source Dev；`local-git` 和 `source Docker` 降级为源码/过渡路径。
@@ -410,7 +410,7 @@
     - 继续运行 `workspace.ts project validate launcher-smoke`，返回 `ok: true`，`schemaVersion: "1"`。
     - 在 Product Root 内只保留 Bun 和 Windows 系统目录，执行 `assets\workspace\.nbook\agent\bin\workspace.cmd project create/validate`、`profile.cmd --help`、`variable.cmd --help`，确认 agent bin wrapper 可通过 Bun 运行。
     - 解压新 zip 到 `%TEMP%`，确认根目录无 `.git`、无根 `node_modules`；PATH 只保留 zip 内 `runtime/bun` 和 Windows 系统目录后，执行 `app\assets\workspace\.nbook\agent\bin\workspace.cmd project create/validate`、`profile.cmd --help`、`variable.cmd --help`，确认 zip 内 wrapper 可用。
-    - 使用本地 `HttpListener` fake GitHub latest release，运行隔离 zip 内 `runtime\bun\bun.exe launcher\launcher.mjs update`；确认 launcher 下载 `neuro-book-windows-x64.zip` / `SHA256SUMS`、完成 SHA256 校验、备份旧 `app/` / `launcher/` / root scripts、切换新 payload，`data/.deploy/windows-launcher.json` 写入 `stage: "updated"`。
+    - 使用本地 `HttpListener` fake GitHub releases 列表，运行隔离 zip 内 `runtime\bun\bun.exe launcher\launcher.mjs update`；确认 launcher 可列出/自动选择带 Windows 包的版本，下载 `neuro-book-windows-x64.zip` / `SHA256SUMS`、完成 SHA256 校验、备份旧 `app/` / `launcher/` / root scripts、切换新 payload，`data/.deploy/windows-launcher.json` 写入 `stage: "updated"`。
     - `bun scripts/deploy/publish-ghcr-image.mjs --dry-run`
     - `bun scripts/deploy/neuro-book-deploy.mjs --yes --deploy-mode ghcr --dry-run --dir .agent/workspace/deploy-ghcr-dry-run`
     - `bash -n scripts/deploy/docker-product-entrypoint.sh`

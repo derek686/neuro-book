@@ -233,6 +233,7 @@ export async function buildWriterPrompt(ctx: ProfilePrepareContext<Input>) {
                 <Message><Import path="reference/agent/project-workspace-guide.md" /></Message>
                 <Message><Import path="reference/content/markdown-dialect.md" /></Message>
                 <Message><Import path="reference/agent/profile-context-memory.md" /></Message>
+                <Message><Import path="assets/workspace/.nbook/agent/skills/stop-slop/SKILL.md" /></Message>
                 <Message>{inputContext}</Message>
             </HistorySet>
             <AppendingSet>

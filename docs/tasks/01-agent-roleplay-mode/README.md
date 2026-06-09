@@ -6,16 +6,20 @@
 
 2026-06-08 update: subject memory 合同已 hard cut 到 `memory-seed.md`、`events.jsonl`、`memory.jsonl`、`mind.md`、`state.md`。下文早期出现的 `events.md` / `knowledge.md` 只表示历史设计记录；当前实现和模板以 Subject RAG Memory task 与 `reference/content/simulation.md` 为准。
 
+2026-06-09 update: RP 用户交流层已实现为 `rp.leader` builtin profile。当前分工是：`rp.leader` 作为 RP 引导、用户交流和陪伴式统筹层，读取 `manual/` 与 `agent-context/rp.leader/`，负责开局引导、化身创建、体验边界、化身可见信息整理和调用模拟内核；`simulator.leader` 继续作为世界模拟和裁决内核，维护 `simulation/subjects`、`simulation/entities` 和 `simulation/runs`。新合同只使用 `rp.leader` 这个名字，不使用 `rp.gm` 或恢复旧 `leader.rp`。
+
+2026-06-09 prompt update: `rp.leader` 和 `RP模式` skill 已参考 5e PHB / DMG / DM Screen 的运行结构优化：普通 RP 入口优先进入 `rp.leader`，Tick 循环固定为“处境 -> 行动 -> 世界回应 -> 新选择点”；开局先确认默认化身、调整默认化身或自定义化身；世界观披露按化身创建和第一幕逐步展开；世界裁决、人物/环境反应和 state commit 仍交给 `simulator.leader`。
+
 本任务当前实现目标已从独立 `roleplay/` 运行目录硬切为默认 Project 模板内的 `simulation/`：
 
 - 新 Project 默认使用 `assets/workspace/.nbook/templates/project-directory-templates`。
 - `simulation/` 随默认 Project 模板创建，不再安装独立 `roleplay-directory-templates`。
-- 旧 `roleplay/gm.md` 的当前对应入口是 `agent-context/simulator.leader/context.md`。
+- 旧 `roleplay/gm.md` 的当前职责被拆分：人类主持说明进入 `manual/gm-guide.md`，用户交流层项目上下文进入 `agent-context/rp.leader/context.md`；世界模拟和裁决协议进入 `agent-context/simulator.leader/context.md`。
 - 旧 `roleplay/actors/{id}/actor.md` 改为 `simulation/subjects/{id}/subject.md`。
 - 旧 `roleplay/playthrough/` 改为 `simulation/runs/`。
-- `simulator.leader`、`simulator.actor`、`rp.writer` 是当前 RP/simulation profile 组合，提示词和路径合同使用 `agent-context/` + `simulation/subjects|entities|runs` 口径。
-- `leader.rp` 是已删除的 legacy profile；当前 RP 入口应创建或复用 `simulator.leader`。
-- `RP目录初始化` skill 已删除；`RP模式` skill 负责说明 `simulator.leader` 入口和就地 RP/simulation 入口。
+- `rp.leader`、`simulator.leader`、`simulator.actor`、`rp.writer` 是当前 RP/simulation 目标分层；`rp.leader` 已作为 builtin profile 可运行，负责用户交流和陪伴主持。
+- `leader.rp` 是已删除的 legacy profile；如果后续恢复 RP 主持能力，应使用 `rp.leader` 名称。
+- `RP目录初始化` skill 已删除；`RP模式` skill 已说明 `rp.leader` 用户层、`simulator.leader` 模拟层和默认 Project `manual/` 入口。
 
 下文包含早期设计记录；凡与本节冲突，以本节为准。
 
@@ -66,7 +70,7 @@
 ## Decisions
 
 - RP 相关能力先拆成至少三个 skill：
-  - `RP模式`：介绍本系统如何运行 RP、如何进入轻量 RP、如何理解 `simulator.leader` / `simulator.actor` / `rp.writer` 分工、如何引用 RP 文档和导入流程。
+  - `RP模式`：介绍本系统如何运行 RP、如何进入 `rp.leader` 引导层、如何理解 `rp.leader` / `simulator.leader` / `simulator.actor` / `rp.writer` 分工、如何引用 RP 文档和导入流程。
   - `RP目录初始化`：已废弃并删除；simulation 目录进入默认 Project 模板。
   - `novel-import-silly-tavern-card`：提取或读取角色卡原始 JSON，生成检查报告，并把稳定文本设定导入当前 workspace 的写作资产；当前使用 canonical skill `novel-import-silly-tavern-card`；RP 动态机制优先归档到 `reference/`，后续再转写为 `simulation/` 编排文件。
 - 角色卡导入分两层：
@@ -75,6 +79,9 @@
 - 不单独维护 `conversion-plan.md`。`inspect` 只输出临时 overview；稳定证据由 `unpack` 写入解包目录；导入过程以 unpack report 和 import report 记录本次写入、跳过、归档和需人工确认的内容。
 - RP 目录建议使用更可读的 `simulation/`，而不是缩写 `rp/`。
 - `simulation/` 是当前小说 workspace 的 runtime state 目录；profile 专用说明不再混放到 `simulation/`，而是进入 `agent-context/{profile}/context.md`。
+- `manual/` 是当前 Project 的说明书目录，保存快速开始、玩家手册、角色创建指南、世界观导览、规则指南、GM 手册和主持人速查屏；它不替代 `lorebook/` canon，也不替代 `simulation/` runtime state。
+- `rp.leader` 是当前 RP 用户交流层的唯一 canonical 名称；`rp.gm` 不作为目录、profile 或合同名，`leader.rp` 只保留为历史实现记录。
+- `rp.leader` 与 `simulator.leader` 分工：前者负责 RP 引导、化身创建、体验边界、陪伴和用户交流，后者负责世界模拟、裁决和 runtime state。
 - RP/simulation 目录已经并入默认 Project 模板 `project-directory-templates`。新建 Project 时默认生成 `simulation/`；目标 Project Workspace 已存在且显式传入 `--template project-directory-templates` 时，只补齐缺失的默认模板文件，不覆盖用户已有内容。
 - 试用反馈后的 RP 交互决策：
   - `rp.writer` 可以开放 bash 与文件读写工具。它不再必须通过 `report_result.data.prose` 报告正文；可以直接写作或写入 GM 指定文件。后续实现要用 profile prompt 和输入参数约束写入范围。

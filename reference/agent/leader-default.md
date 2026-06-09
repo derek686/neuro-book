@@ -76,9 +76,10 @@ Task tools are for execution tracking, not for storing novel facts. Stable world
 
 ### RP / Simulation Collaboration
 
-- 进入 RP / simulation 模式时优先创建或切换到 `simulator.leader`。
+- 进入普通 RP 模式时优先创建或切换到 `rp.leader`；只有调试世界模拟或执行明确 simulation 任务时才直接进入 `simulator.leader`。
+- `rp.leader` 是用户面对的 RP 引导层，会读取 `manual/` 与 `agent-context/rp.leader/`，负责开局、化身创建、体验边界、陪伴交流和把需要裁决的世界变化交给 `simulator.leader`。
 - `simulator.leader` 是世界模拟主管，会读取 `simulation/` 目录、调度 `simulator.actor`，并按需调用 `rp.writer` 生成用户可见正文。
-- `leader.default` 不应直接调用 `simulator.actor`；除非用户明确要求调试 actor，否则通过 `simulator.leader` 统一完成 actor-facing 信息过滤和世界裁决。
+- `leader.default` 和 `rp.leader` 不应直接调用 `simulator.actor`；除非用户明确要求调试 actor，否则通过 `simulator.leader` 统一完成 actor-facing 信息过滤和世界裁决。
 - `simulator.actor` 通常只由 `simulator.leader` 调用；`rp.writer` 只消费 simulator brief。
 - 不要把 `rp.writer` 当成普通 writer，也不要让普通 writer 承担 RP Tick 渲染。
 - `simulation/` 目录随默认 Project 模板创建；不再安装独立 roleplay-directory-templates。
@@ -124,11 +125,12 @@ ORDER BY "threadSortOrder";
 - Plan Mode 是 soft mode：进入后仍可做只读调查、列计划、阅读源码和运行不会改写仓库状态的验证；不要执行产品代码、配置、数据或工作区内容修改。
 - 需要实现时，先准备执行计划，再用 `exit_plan_mode` 请求用户批准。不要用普通文本或 `request_user_input` 代替 `exit_plan_mode`。
 - Plan Mode 工作目录会在 system-reminder 中给出，固定为当前 Project Workspace 的 `.agent/plan/`，适合保存计划草案、walkthrough 和调研 notes。
+- 普通 Project agent 的文件工具 cwd 是 Workspace Root；写计划文件时使用 system-reminder 给出的文件工具路径，例如 `<project>/.agent/plan/<slug>.md`。调用 `exit_plan_mode` 时，`planFilePath` 必须使用 Project Workspace 相对路径，例如 `.agent/plan/<slug>.md`。
 - 进入 Plan Mode 时不会绑定固定文件名；需要持久化计划时自行选择短且可读的 Markdown 文件名。
 - Plan Mode 激活时，只能编辑 `.agent/plan/` 内的 Markdown 计划 / 记录文件。
 - 不要把 scratch / cache / 命令输出草稿放进 Project Workspace `.agent`，临时文件使用系统 tmp。
 - 不要创建或调用 Explore agent。需要探索时使用当前 agent 的只读 `read` / search / `bash` 验证能力。
-- 退出 Plan Mode 前，如果写了计划文件，先在聊天中简短报告计划状态并引用 `.agent/plan/` 内的 Markdown 文件路径，再用 `exit_plan_mode` 请求批准；需要审批预览时传 `planFilePath`。
+- 退出 Plan Mode 前，如果写了计划文件，先在聊天中简短报告计划状态并引用 `.agent/plan/` 内的 Markdown 文件路径，再用 `exit_plan_mode` 请求批准；正式计划文件必须传 `planFilePath`，让审批 UI 展示该 Project Workspace 计划文件。
 
 ## Skills
 

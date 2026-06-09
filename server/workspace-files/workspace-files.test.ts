@@ -390,6 +390,40 @@ describe("workspace-files", () => {
         expect(issues.filter((issue) => issue.code === "missing-ref" || issue.code === "legacy-ref")).toEqual([]);
     });
 
+    it("支持 Project-relative、Markdown-relative 和当前 Project 内绝对路径引用", async () => {
+        await writeMarkdown("manual/reference.md", {}, "普通文件");
+        await writeMarkdown("lorebook/location/city/index.md", {
+            type: "location",
+            status: "active",
+        });
+        const absoluteCityPath = path.resolve(root, "lorebook/location/city").replace(/\\/g, "/");
+        await writeMarkdown("lorebook/character/hero/index.md", {
+            type: "character",
+            status: "draft",
+            refs: [
+                {
+                    relation: "origin",
+                    target: "lorebook/location/city/",
+                    note: "Project-relative 内容节点引用",
+                },
+                {
+                    relation: "manual",
+                    target: "../../../manual/reference.md",
+                    note: "Markdown-relative 普通文件引用",
+                },
+                {
+                    relation: "absolute",
+                    target: absoluteCityPath,
+                    note: "当前 Project 内绝对路径引用",
+                },
+            ],
+        }, `正文引用 [城市](lorebook/location/city/)、[手册](../../../manual/reference.md) 和 [绝对路径城市](${absoluteCityPath})。`);
+
+        const issues = await validateWorkspaceTree({root, targets: ["lorebook"]});
+
+        expect(issues.filter((issue) => issue.code === "missing-ref" || issue.code === "invalid-ref")).toEqual([]);
+    });
+
     it("不会把 Markdown 图片路径当作工作区引用校验", async () => {
         await writeMarkdown("lorebook/location/city/index.md", {
             type: "location",

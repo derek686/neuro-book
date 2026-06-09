@@ -28,6 +28,20 @@ export const SimulatorLeaderInputSchema = Type.Object({
 export const SimulatorLeaderOutputSchema = Type.Object({});
 
 /**
+ * rp.leader 的实例初始化参数。每轮 RP 主持任务通过 invoke_agent.message 传入。
+ */
+export const RpLeaderInputSchema = Type.Object({
+    projectPath: Type.String({description: "Project Workspace path, e.g. workspace/silver-dragon-hime."}),
+    manualRoot: Type.Optional(Type.String({description: "Agent cwd-relative manual root, e.g. silver-dragon-hime/manual/. Omit to derive from projectPath."})),
+    simulationRoot: Type.Optional(Type.String({description: "Agent cwd-relative simulation root, e.g. silver-dragon-hime/simulation/. Omit to derive from projectPath."})),
+});
+
+/**
+ * rp.leader 返回普通 assistant 文本，不绑定 report_result.data 结构。
+ */
+export const RpLeaderOutputSchema = Type.Object({});
+
+/**
  * director 的实例初始化参数。每轮剧情任务通过 invoke_agent.message 传入。
  */
 export const DirectorInputSchema = Type.Object({
@@ -100,7 +114,7 @@ export const SubjectSimulatorOutputSchema = Type.Object({
  */
 export const MemoryCuratorInputSchema = Type.Object({
     subjectPath: Type.String({description: "被维护的 subject directory path。"}),
-    facts: Type.String({description: "本轮新增的 subject-facing facts。不要写具体 JSON Patch 操作要求。"}),
+    facts: Type.Array(Type.String({description: "本轮新增的 subject-facing fact。不要写具体 JSON Patch 操作要求。"}), {minItems: 1, description: "本轮新增的 subject-facing facts。调用方只报告事实，不指定具体 patch 操作。"}),
     currentMemories: Type.Array(Type.Object({
         topic: Type.String({description: "当前认知主体。"}),
         aliases: Type.Optional(Type.Array(Type.String(), {description: "旧称、模糊称呼或合并后的别名。"})),
@@ -112,15 +126,13 @@ export const MemoryCuratorInputSchema = Type.Object({
  * memory.curator 通过 report_result.data 返回 JSON Patch。
  */
 export const MemoryCuratorOutputSchema = Type.Object({
-    reason: Type.String({description: "为什么需要或不需要更新 memory.jsonl。"}),
     patch: Type.Array(Type.Object({
         op: Type.String({description: "RFC 6902 operation: add/remove/replace/move/copy/test."}),
         path: Type.String({description: "JSON Pointer path."}),
         from: Type.Optional(Type.String({description: "move/copy 的来源 JSON Pointer。"})),
         value: Type.Optional(Type.Unknown({description: "add/replace/test 的值。"})),
-    }), {description: "应用到 SubjectMemory[] 的 JSON Patch。无更新返回空数组。"}),
-    summary: Type.String({description: "人类可读更新摘要。"}),
-});
+    }, {additionalProperties: false}), {description: "应用到 SubjectMemory[] 的 JSON Patch。无更新返回空数组。"}),
+}, {additionalProperties: false});
 
 /**
  * rp.writer 的实例初始化参数。每轮 writer brief 通过 invoke_agent.message 传入。

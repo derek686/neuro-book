@@ -20,7 +20,7 @@ export const OutputSchema = SubjectSimulatorOutputSchema;
 export type Input = Static<typeof InputSchema>;
 export type Output = Static<typeof OutputSchema>;
 
-const allowedToolKeys = ["subject_rag_search", "subject_event_append", "memory_bio", "read", "edit", "report_result"] as const;
+const allowedToolKeys = ["subject_rag_search", "subject_event_append", "subject_memory_update", "read", "edit", "report_result"] as const;
 
 const ActorContextLoadSidecarSchema = Type.Object({
     actor_safe_context: Type.String({description: "准备注入 actor 主 run 的角色可知设定摘要；没有额外信息时写空字符串。"}),
@@ -105,7 +105,7 @@ const actorContextLoadPass: SidecarProfilePass<Input, ActorContextLoadSidecarDat
 const actorMemorySavePass: SidecarProfilePass<Input, ActorMemorySaveSidecarData> = {
     name: "actor.memory-save",
     stage: "settleRun",
-    allowedToolKeys: ["subject_event_append", "memory_bio", "read", "edit", "report_result"],
+    allowedToolKeys: ["subject_event_append", "subject_memory_update", "read", "edit", "report_result"],
     sidecarDataSchema: ActorMemorySaveSidecarSchema,
     enterPrompt: (ctx) => profileText`
         退出角色扮演模式。你现在是 subject simulator 的 memory-save 旁路，不要继续扮演角色，不要新增角色台词或行动。
@@ -126,13 +126,13 @@ const actorMemorySavePass: SidecarProfilePass<Input, ActorMemorySaveSidecarData>
 
         写入规则：
         - 只允许维护 eventsPath、memoryPath 与 mindPath。
-        - 调用 subject_event_append 或 memory_bio 时，subjectPath 必须使用上面的 subjectPath，不要把 eventsPath 或 memoryPath 当作 subjectPath。
+        - 调用 subject_event_append 或 subject_memory_update 时，subjectPath 必须使用上面的 subjectPath，不要把 eventsPath 或 memoryPath 当作 subjectPath。
         - 不要修改 subject.md。
         - 不要修改 statePath；如果主 run 的可见反应暗示状态变化，只在 skipped 或 needs_review 中说明交给上级模拟器 / 后续状态系统处理。
         - 调用 subject_event_append 追加 events.jsonl，不要直接 edit/write events.jsonl。
         - events.jsonl 只写 subject 视角经历流：这个角色本 Tick 经历了什么、听见什么、被告知什么、当时怎么想、怎么产生误解或完成推理。
         - events.jsonl 不写外部推理、真实隐藏设定、其他角色私密知识或完整 packet。
-        - 如果本轮造成稳定认知变化，调用 memory_bio，只报告 subject-facing facts；不要自己指定合并、删除、改名或 JSON Patch 操作。
+        - 如果本轮造成稳定认知变化，调用 subject_memory_update，只报告 subject-facing facts 数组；不要自己指定合并、删除、改名或 JSON Patch 操作。
         - memory.jsonl 记录角色对某个主体的当前看法、理解、态度、关系判断、误解或修正，不写外部推理、真实隐藏设定或其他角色私密知识。
         - mind.md 只写角色当前想法、判断、犹豫、情绪或动机，不写世界真相。
         - 根据 visible_response、spoken_dialogue、inner_response 和本轮上下文判断是否需要更新。
@@ -203,7 +203,7 @@ function renderSystemPrompt(input: Input, profileKey: string): string {
             - 你只知道 <actor_sidecar_context>、当前 user message 中的戏内标签，以及上级模拟器明确给你的可感知信息。
             - 你看不到 subject.md、events.jsonl、memory.jsonl、mind.md、state.md 原文；这些只由 sidecar 过滤后注入。
             - 你不能把隐藏真相、调度方推理、其他角色私密想法、未注入的 lorebook 设定当成自己知道的事实。
-            - 主扮演阶段实际只能执行 report_result；不要调用 read、write、edit、subject_rag_search、subject_event_append 或 memory_bio，文件维护由 actor.context-load / actor.memory-save 旁路处理。
+            - 主扮演阶段实际只能执行 report_result；不要调用 read、write、edit、subject_rag_search、subject_event_append 或 subject_memory_update，文件维护由 actor.context-load / actor.memory-save 旁路处理。
         </actor_context_contract>
 
         <message_tags>
