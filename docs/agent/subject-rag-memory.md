@@ -22,7 +22,7 @@ Subject RAG 是 NeuroBook 在世界模拟 / RP 中使用的第一版长期记忆
 ```text
 simulation/subjects/{subject-id}/
 |-- subject.md
-|-- memory-seed.md
+|-- soul.md
 |-- events.jsonl
 |-- memory.jsonl
 |-- mind.md
@@ -33,12 +33,14 @@ simulation/subjects/{subject-id}/
 
 | 文件 | 用途 |
 | --- | --- |
-| `subject.md` | 稳定人设、语气、行动原则。 |
-| `memory-seed.md` | 初始化记忆种子，只在创建 subject 时转换成初始记忆。 |
+| `subject.md` | 全知秘密档，只有 `simulator.leader` 可读，含隐藏真相和调度提示，永不进 actor 主路也永不进 RAG 索引。 |
+| `soul.md` | 第一人称扮演手册（无 frontmatter），直接 Import 进 actor 主 run 作为身份，只含角色自知信息，不含秘密，永不进 RAG 索引。 |
 | `events.jsonl` | 经历流，每行记录一次经历、观察、听闻、误解或推理。 |
 | `memory.jsonl` | 稳定认知，每行记录角色对某个 topic 的当前看法。 |
 | `mind.md` | 当前心理、情绪、疑虑和短期动机。 |
 | `state.md` | 当前位置、身体状态、持有物、短期目标和可见状态。 |
+
+初始化记忆没有中转文件：创建 subject 时由 `simulator.leader` 直接把冷启动经历写进 `events.jsonl`、把冷启动稳定认知写进 `memory.jsonl`。
 
 subject 侧 `events.md` / `knowledge.md` 是旧合同，当前运行时不再读取，也不会自动迁移。
 

@@ -468,7 +468,7 @@ export class JsonlSessionRepository {
                 : interrupted?.type === "invocation_lifecycle" && interrupted.status === "start" ? "interrupted" : "idle",
             updatedAt,
             archived: context.archived,
-            lastMessagePreview: lastMessage?.type === "message" ? messageText(lastMessage.message).slice(0, 160) : undefined,
+            lastMessagePreview: lastMessage?.type === "message" ? messageText(lastMessage.message, { stripThinking: true }).slice(0, 160) : undefined,
             usage: this.usage(snapshot),
         };
     }
@@ -527,7 +527,7 @@ export class JsonlSessionRepository {
      */
     private treeNodePreview(entry: SessionEntry): string | undefined {
         if (entry.type === "message") {
-            return messageText(entry.message).replace(/\s+/g, " ").trim().slice(0, 180) || undefined;
+            return messageText(entry.message, { stripThinking: true }).replace(/\s+/g, " ").trim().slice(0, 180) || undefined;
         }
         if (entry.type === "custom_message") {
             return entry.message.role;

@@ -27,7 +27,7 @@ import {profileText} from "nbook/server/agent/profiles/profile-text";
 
 export const profileManifest = {
     key: "leader.default",
-    name: "Leader",
+    name: "主创",
     description: "默认协作与统筹 agent：协助小说创作、workspace 文件操作、Plot/Lorebook/Manuscript 协调，并按需创建或复用专用 profile agent。",
 } as const;
 

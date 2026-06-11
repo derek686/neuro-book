@@ -3142,6 +3142,77 @@ describe("NeuroAgentHarness", () => {
         expect(result.error).toContain("sidecar_data");
     }, 30_000);
 
+    it("object sidecar_data 被模型包成 schema 字符串时会解析真实 properties 数据", async () => {
+        let observedSidecarData: {changed_files: string[]} | undefined;
+        harness.profiles.register(defineAgentProfile({
+            manifest: {
+                key: "test.sidecar-schema-string-wrapper",
+                name: "Sidecar Schema String Wrapper",
+            },
+            inputSchema: Type.Object({}),
+            allowedToolKeys: ["report_result"],
+            sidecars: [{
+                name: "actor.memory-save",
+                stage: "prepareRun",
+                allowedToolKeys: ["report_result"],
+                sidecarDataSchema: Type.Object({
+                    changed_files: Type.Array(Type.String()),
+                    events_summary: Type.String(),
+                    memory_summary: Type.String(),
+                    mind_summary: Type.String(),
+                    skipped: Type.Array(Type.String()),
+                    needs_review: Type.Array(Type.String()),
+                }),
+                enterPrompt: "保存记忆。",
+                merge(_ctx, result) {
+                    observedSidecarData = result.sidecarData as {changed_files: string[]};
+                    return {};
+                },
+            }],
+            prepare() {
+                return {};
+            },
+        }), false);
+        faux.setResponses([
+            fauxAssistantMessage([
+                fauxToolCall("report_result", {
+                    result: "saved",
+                    sidecar_data: JSON.stringify({
+                        type: "object",
+                        required: ["changed_files", "events_summary", "memory_summary", "mind_summary", "skipped", "needs_review"],
+                        properties: {
+                            changed_files: ["subject/events.jsonl"],
+                            events_summary: "追加经历。",
+                            memory_summary: "",
+                            mind_summary: "",
+                            skipped: [],
+                            needs_review: [],
+                        },
+                    }),
+                }, {id: "sidecar-report"}),
+            ], {stopReason: "toolUse"}),
+            fauxAssistantMessage([
+                fauxToolCall("report_result", {
+                    result: "main",
+                }, {id: "main-report"}),
+            ], {stopReason: "toolUse"}),
+        ]);
+        const created = await harness.createAgent({
+            profileKey: "test.sidecar-schema-string-wrapper",
+            input: {},
+            workspaceRoot: root,
+        });
+
+        const result = await harness.invokeAgent({
+            sessionId: created.sessionId,
+            mode: "prompt",
+            message: {text: "run"},
+        });
+
+        expect(result.status).toBe("completed");
+        expect(observedSidecarData?.changed_files).toEqual(["subject/events.jsonl"]);
+    }, 30_000);
+
     it("sidecar 保持 profile 最大工具 schema 可见，但执行权限使用旁路子集", async () => {
         const observedToolNames: string[][] = [];
         harness.tools.register({

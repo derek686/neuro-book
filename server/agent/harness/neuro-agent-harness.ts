@@ -1680,7 +1680,7 @@ export class NeuroAgentHarness {
 
     private sessionFallbackSummary(messages: AgentMessage[]): string | undefined {
         const latest = [...messages].reverse()
-            .map((message) => message.role === "custom" ? "" : messageText(message as Message))
+            .map((message) => message.role === "custom" ? "" : messageText(message as Message, { stripThinking: true }))
             .find((text) => text.trim().length > 0);
         return latest?.replace(/\s+/g, " ").trim().slice(0, 360) || undefined;
     }
@@ -4103,6 +4103,7 @@ export class NeuroAgentHarness {
             "旁路 transcript 会写入 session tree 的旁路分支供审计，但不会成为主 active path；主 run 只能看到 merge 后注入的结果。",
             "provider-visible tool schema 仍保持 profile 最大工具集合；但本旁路阶段只有 allowed tools 列出的工具允许实际执行。",
             "完成旁路后优先调用 report_result，并把旁路结构化结果放在 sidecar_data 字段；不要把旁路结果放在主路 data 字段。",
+            ...this.sidecarDataFormatInstructions(pass),
             "sidecar_data 期望结构：",
             schemaText,
             "</system-reminder>",
@@ -4111,16 +4112,32 @@ export class NeuroAgentHarness {
         ].join("\n");
     }
 
+    private sidecarDataFormatInstructions(pass: SidecarProfilePass): string[] {
+        const schemaType = sidecarSchemaType(pass);
+        if (schemaType === "string") {
+            return [
+                "sidecar_data 必须直接是字符串正文；不要返回 JSON 对象，不要返回 JSON.stringify 后的对象文本。",
+            ];
+        }
+        if (schemaType === "object") {
+            return [
+                "sidecar_data 必须直接是 JSON object；不要把对象包成字符串。",
+                "sidecar_data 顶层字段必须是业务结果字段；不要复制 schema 的 type / required / properties 外壳。",
+            ];
+        }
+        return [];
+    }
+
     private readSidecarResult(pass: SidecarProfilePass, result: RunLoopResult): SidecarResult {
         if (result.status !== "completed") {
             throw new Error(`sidecar ${pass.name} 未完成。`);
         }
         const report = result.reportResult;
         if (report && "sidecar_data" in report) {
-            this.assertValidSidecarData(pass, report.sidecar_data);
+            const sidecarData = this.normalizeSidecarData(pass, report.sidecar_data);
             return {
                 result: report.result,
-                sidecarData: report.sidecar_data as JsonValue,
+                sidecarData,
             };
         }
         if (!pass.outputFallback) {
@@ -4130,22 +4147,44 @@ export class NeuroAgentHarness {
         const fallbackData = pass.outputFallback === "parse_final_message_json"
             ? parseSidecarFinalJson(pass.name, finalText)
             : finalText;
-        this.assertValidSidecarData(pass, fallbackData);
+        const sidecarData = this.normalizeSidecarData(pass, fallbackData);
         return {
             result: finalText,
-            sidecarData: fallbackData as JsonValue,
+            sidecarData,
         };
     }
 
-    private assertValidSidecarData(pass: SidecarProfilePass, value: unknown): void {
+    private normalizeSidecarData(pass: SidecarProfilePass, value: unknown): JsonValue {
         if (!pass.sidecarDataSchema) {
-            return;
+            return value as JsonValue;
+        }
+        const candidates = this.sidecarDataCandidates(pass, value);
+        let lastError: unknown;
+        for (const candidate of candidates) {
+            try {
+                return Value.Parse(pass.sidecarDataSchema, candidate) as JsonValue;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        const message = lastError instanceof Error ? lastError.message : String(lastError);
+        throw new Error(`sidecar ${pass.name} sidecar_data 校验失败：${message}`);
+    }
+
+    private sidecarDataCandidates(pass: SidecarProfilePass, value: unknown): unknown[] {
+        const schemaType = sidecarSchemaType(pass);
+        if (schemaType !== "object" || typeof value !== "string") {
+            return [value];
         }
         try {
-            Value.Parse(pass.sidecarDataSchema, value);
+            const parsed = JSON.parse(value) as unknown;
+            const candidates = [value, parsed];
+            if (isRecord(parsed) && isRecord(parsed.properties)) {
+                candidates.push(parsed.properties);
+            }
+            return candidates;
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            throw new Error(`sidecar ${pass.name} sidecar_data 校验失败：${message}`);
+            return [value];
         }
     }
 
@@ -4186,6 +4225,14 @@ function estimateTextTokens(text: string): number {
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {
     return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function sidecarSchemaType(pass: SidecarProfilePass): string | undefined {
+    const schema = pass.sidecarDataSchema;
+    if (!schema || typeof schema !== "object" || !("type" in schema)) {
+        return undefined;
+    }
+    return typeof schema.type === "string" ? schema.type : undefined;
 }
 
 function stableJsonHash(value: JsonValue): string {

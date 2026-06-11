@@ -9,8 +9,8 @@ import {Message, ModelContext, ProfilePrompt, System} from "nbook/server/agent/p
 
 export const profileManifest = {
     key: "summarizer",
-    name: "Session Summarizer",
-    description: "Background profile that maintains display title and summary for an Agent session.",
+    name: "会话摘要",
+    description: "后台元数据维护 agent：自动维护 Agent session 的显示标题与摘要。",
 } as const;
 
 export const InputSchema = SessionSummarizerInputSchema;

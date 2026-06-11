@@ -8,7 +8,7 @@ import {profileText} from "nbook/server/agent/profiles/profile-text";
 
 export const profileManifest = {
     key: "memory.curator",
-    name: "Memory Curator",
+    name: "记忆整理",
     description: "通用记忆整理器：根据 facts 和当前 memory 集合产出 JSON Patch，由工具层校验并写回。",
 } as const;
 

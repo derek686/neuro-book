@@ -1306,7 +1306,7 @@ function normalizeImportPath(input: string): string {
         throw new Error(`Import.path 不允许使用 .. 越界：${input}`);
     }
     if (!isAllowedImportPath(normalized)) {
-        throw new Error(`Import.path 只允许 AGENTS.md、reference/**、docs/** 或 assets/workspace/.nbook/agent/skills/**：${input}`);
+        throw new Error(`Import.path 只允许 AGENTS.md、reference/**、docs/**、assets/workspace/.nbook/agent/skills/** 或 workspace/**：${input}`);
     }
     return normalized;
 }
@@ -1315,7 +1315,8 @@ function isAllowedImportPath(path: string): boolean {
     return path === "AGENTS.md"
         || path.startsWith("reference/")
         || path.startsWith("docs/")
-        || path.startsWith("assets/workspace/.nbook/agent/skills/");
+        || path.startsWith("assets/workspace/.nbook/agent/skills/")
+        || path.startsWith("workspace/"); // 放开 Project 运行态文件（如 subject soul.md）Import；细粒度权限以后再收
 }
 
 async function readImportFile(path: string, required: boolean): Promise<{exists: true; text: string} | {exists: false}> {

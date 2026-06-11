@@ -8,7 +8,7 @@ import {profileText} from "nbook/server/agent/profiles/profile-text";
 
 export const profileManifest = {
     key: "rp.leader",
-    name: "RP Leader",
+    name: "跑团主持",
     description: "RP 主持与编剧层：负责开局引导、IC/OOC 审查、把世界变化交给 simulator.leader 裁决、以用户化身视角编剧 Writer Brief 并调用 rp.writer，最后组装正文与元场景。",
 } as const;
 

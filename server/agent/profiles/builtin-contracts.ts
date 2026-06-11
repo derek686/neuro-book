@@ -82,6 +82,9 @@ export const DirectorOutputSchema = Type.Object({
  */
 export const SubjectSimulatorInputSchema = Type.Object({
     subjectPath: Type.String({description: "subject simulator directory path，必须相对于 Agent cwd，例如 project-slug/simulation/subjects/erina。"}),
+    kind: Type.Union([Type.Literal("player"), Type.Literal("npc")], {
+        description: "subject 类型。player：用户化身，actor 不主动行动/抢话，只把 leader 的 directive 第一人称自然化复述；npc：模拟器自由扮演。simulator.leader 调 actor 前按 subject.md frontmatter 的 kind 显式传入。第一版仅支持 player/npc。",
+    }),
 });
 
 /**

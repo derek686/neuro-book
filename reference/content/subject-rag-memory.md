@@ -15,15 +15,11 @@ simulation/subjects/{subject-id}/events.jsonl
 simulation/subjects/{subject-id}/memory.jsonl
 ```
 
-这些小文件由 `actor.context-load` sidecar 读取，并被整理进 actor-safe context：
+这两个文件由 `actor.context-load` sidecar 通过 `subject_rag_search` 检索召回。`actor.context-load` 是纯 RAG 检索器，不读取任何文件原文（包括 `subject.md`、`soul.md`、`mind.md`、`state.md`），只把召回结果整理进 actor-safe context。
 
-```text
-simulation/subjects/{subject-id}/subject.md
-simulation/subjects/{subject-id}/mind.md
-simulation/subjects/{subject-id}/state.md
-```
+角色人设由 `soul.md` 提供（第一人称扮演手册，已被 actor 主路直接 Import）；隐藏真相由全知档 `subject.md` 保管（仅 simulator.leader 可读）。这两个文件都不进 RAG 索引。
 
-`memory-seed.md` 只作为创建 subject 时的初始化记忆种子。运行时不把它当成最新记忆反复注入。
+初始化记忆没有中转文件：创建 subject 时，由 simulator.leader 直接把冷启动经历写进 `events.jsonl`、把冷启动稳定认知写进 `memory.jsonl`。
 
 ## Subject Memory Files
 
@@ -145,9 +141,9 @@ Agent runtime 读取配置时必须使用 `workspaceRoot + projectPath` 合并 P
 
 ## Sidecar Flow
 
-`actor.context-load` 在 `prepareRun` 阶段执行：
+`actor.context-load` 在 `prepareRun` 阶段执行（纯 RAG 检索器，不读文件）：
 
-1. 基于 actor-facing packet 和当前 subject 文件生成检索 query。
+1. 基于 actor-facing packet 生成检索 query。
 2. 调用 `subject_rag_search` 粗召回当前 subject 的 `events.jsonl` 和/或 `memory.jsonl`；如果两层都需要，必须分别传 `["events"]`、`["memory"]` 调用两次。除 `limit` 外不使用额外查询调参。
 3. 自行 rerank、去重、过滤和压缩。
 4. 通过 `report_result.sidecar_data` 返回纯文本 actor-safe context。
@@ -160,7 +156,7 @@ Agent runtime 读取配置时必须使用 `workspaceRoot + projectPath` 合并 P
 1. 使用 `subject_event_append` 追加本轮 subject-facing 经历。
 2. 若稳定认知变化，调用 `subject_memory_update` 维护 `memory.jsonl`。
 3. 必要时更新 `mind.md`。
-4. 不更新 `state.md`；位置、伤势、持有物等由 `simulator.leader` 裁决。
+4. 不读取也不写 `subject.md`、`soul.md`、`state.md`：人设固定，秘密只在全知档，位置 / 伤势 / 持有物等状态由 `simulator.leader` 裁决。
 
 ## Boundaries
 

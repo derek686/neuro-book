@@ -561,6 +561,7 @@ CREATE VIRTUAL TABLE subject_rag_vec USING vec0(
 - 2026-06-08：收窄 `subject_rag_search` 查询接口。第一版只暴露 `limit`；`minScore`、`maxCharsPerItem`、tick/time 范围暂不提供。索引层改为归一化 embedding 后用内部距离阈值过滤明显无关候选；工具结果继续只渲染文本，不向 Agent 返回 score 或 JSON candidates。
 - 2026-06-08：修复 profile 权限边界。`leader.default` 不再暴露 `subject_event_append`、`subject_rag_search` 和 memory update 工具；新增 `mainRunAllowedToolKeys` profile 合同和 harness 执行层接入，`simulator.actor` 主 run 只允许执行 `report_result`，RAG / memory 工具只在 `actor.context-load` 与 `actor.memory-save` sidecar 执行子集中可用。
 - 2026-06-09：根据最新命名决策硬切 memory update 工具名：`memory_bio` 改为 `subject_memory_update`，与 `subject_event_append`、`subject_rag_search` 形成同一命名族；不保留旧 alias。`subject_memory_update.facts` 改为 `string[]`；`memory.curator` 的 `report_result.data` 收窄为 `{ patch }`，人类可读摘要统一放在 `report_result.result`。
+- 2026-06-12：subject 文件结构在「Subject Soul 拆分」任务中调整，本文上方目录图里的 `memory-seed.md` 已废弃。当前 subject 目录为 `subject.md`（全知秘密档，仅 simulator.leader 可读）+ `soul.md`（第一人称扮演手册，直接 Import 进 actor 主路）+ `events.jsonl` / `memory.jsonl` / `mind.md` / `state.md`。冷启动初始记忆由 simulator.leader 直接落进 `events.jsonl` / `memory.jsonl`，不再经过 `memory-seed.md` 中转。`subject.md` 和 `soul.md` 永不进 RAG 索引；RAG 仍只索引 `events.jsonl` / `memory.jsonl`，本任务的 RAG 检索/索引合同不变。
 
 ## TODO / Follow-ups
 

@@ -8,7 +8,7 @@ import {profileText} from "nbook/server/agent/profiles/profile-text";
 
 export const profileManifest = {
     key: "researcher",
-    name: "Researcher",
+    name: "联网研究",
     description: "联网研究 agent：使用 web_search 和 web_fetch 查找、核对、归纳外部信息，保留连续对话上下文，并在回答中给出来源。",
 } as const;
 

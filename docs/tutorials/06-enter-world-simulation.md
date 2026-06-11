@@ -80,7 +80,7 @@ simulation/
 
 ```text
 subject.md
-memory-seed.md
+soul.md
 events.jsonl
 memory.jsonl
 mind.md
@@ -89,8 +89,8 @@ state.md
 
 含义是：
 
-- `subject.md`：这个主体是谁；frontmatter 可记录 `id`、`name`、`kind`、`profile`、`controlledBy` 和 `canonicalSource`。
-- `memory-seed.md`：初始化记忆种子，只用于创建初始 `events.jsonl` / `memory.jsonl`。
+- `subject.md`：全知秘密档，只有 `simulator.leader` 可读，含隐藏真相和调度提示；frontmatter 可记录 `id`、`name`、`kind`、`profile`、`controlledBy` 和 `canonicalSource`。
+- `soul.md`：第一人称扮演手册（无 frontmatter），直接注入 actor 本人作为身份，只含角色自知信息，不含秘密。
 - `events.jsonl`：这个主体经历过什么，每行一条 `{ tick?, time?, text }`。
 - `memory.jsonl`：这个主体对人、地点、物品、概念或自己的当前稳定看法，每行一条 `{ topic, aliases?, view }`。
 - `mind.md`：当前心理、欲望、误解和倾向。

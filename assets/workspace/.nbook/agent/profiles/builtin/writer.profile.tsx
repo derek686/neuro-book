@@ -19,7 +19,7 @@ const ENABLE_KITTEN_ADULT_STYLE = false;
 
 export const profileManifest = {
     key: "writer",
-    name: "Writer",
+    name: "正文写作",
     description: "单章节正文写作 agent：创建 input 绑定唯一章节和稳定写作上下文，可被多次 invoke 继续润色、局部修改或改同一章。",
 } as const;
 

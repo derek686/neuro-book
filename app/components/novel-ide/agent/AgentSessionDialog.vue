@@ -137,6 +137,27 @@ function statusClass(status: AgentSessionSummaryDto["status"]): string {
     }
 }
 
+/**
+ * 返回 profile 的中文名。
+ */
+function profileDisplayName(profileKey: string): string {
+    switch (profileKey) {
+        case "leader.assets": return "用户资产助手";
+        case "rp.leader": return "跑团主持";
+        case "simulator.leader": return "世界模拟";
+        case "leader.default": return "主创";
+        case "writer": return "正文写作";
+        case "rp.writer": return "跑团写作";
+        case "director": return "剧情导演";
+        case "summarizer": return "会话摘要";
+        case "memory.curator": return "记忆整理";
+        case "researcher": return "联网研究";
+        case "retrieval": return "内容检索";
+        case "simulator.actor": return "角色模拟";
+        default: return profileKey;
+    }
+}
+
 watch(query, refresh, {deep: true});
 watch(() => props.modelValue, (open) => {
     if (open) {
@@ -227,26 +248,29 @@ onClickOutside(filterPanelRef, () => {
                 <div
                     v-for="session in filteredSessions"
                     :key="session.sessionId"
-                    class="flex w-full cursor-pointer items-start justify-between gap-3 rounded-lg border px-3 py-3 text-left transition-colors"
-                    :class="session.sessionId === activeSessionId ? 'border-[var(--accent-main)] bg-[var(--accent-bg)]/40' : 'border-[var(--border-color)] bg-[var(--bg-sidebar)] hover:bg-[var(--bg-hover)]'"
+                    class="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition-all duration-200"
+                    :class="session.sessionId === activeSessionId ? 'border-[var(--accent-main)] bg-[var(--accent-bg)]/40 ring-1 ring-[var(--accent-main)]/30 shadow-md' : 'border-[var(--border-color)] bg-[var(--bg-sidebar)] hover:bg-[var(--bg-hover)]'"
                     @click="emit('select', session.sessionId)"
                 >
                     <div class="min-w-0 flex-1">
-                        <div class="flex min-w-0 items-center gap-2">
-                            <span :class="session.parentSessionId ? 'i-lucide-bot text-[var(--text-muted)]' : 'i-lucide-crown text-amber-600'" class="h-3.5 w-3.5 shrink-0"></span>
-                            <span class="truncate text-sm font-medium text-[var(--text-main)]">{{ sessionTitle(session) }}</span>
-                            <span v-if="session.sessionId === activeSessionId" class="rounded border border-[var(--accent-main)] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-[var(--accent-text)]">Active</span>
+                        <div class="flex min-w-0 items-center gap-3">
+                            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors shadow-sm" :class="session.parentSessionId ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'">
+                                <span :class="session.parentSessionId ? 'i-lucide-bot' : 'i-lucide-crown'" class="h-4.5 w-4.5"></span>
+                            </div>
+                            <span class="truncate text-sm font-semibold text-[var(--text-main)]">{{ sessionTitle(session) }}</span>
+                            <span v-if="session.sessionId === activeSessionId" class="rounded bg-[var(--accent-main)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] font-medium text-[var(--accent-text)]">Active</span>
                             <span class="rounded border px-1.5 py-0.5 text-[10px] font-medium" :class="statusClass(session.status)">{{ statusLabel(session.status) }}</span>
                         </div>
-                        <div class="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{{ sessionPreview(session) }}</div>
-                        <div class="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
-                            <span class="font-mono">#{{ session.sessionId }}</span>
+                        <div class="mt-2 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{{ sessionPreview(session) }}</div>
+                        <div class="mt-2.5 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                            <span class="font-mono bg-[var(--bg-input)] px-1.5 py-0.5 rounded text-[var(--text-muted)] font-bold">#{{ session.sessionId }}</span>
                             <span>{{ formatTimestamp(session.updatedAt) }}</span>
-                            <span class="rounded border border-[var(--border-color)] bg-[var(--bg-input)] px-1.5 py-0.5 font-mono tracking-normal">{{ session.profileKey }}</span>
-                            <span v-if="session.parentSessionId" class="rounded border border-[var(--border-color)] bg-[var(--bg-input)] px-1.5 py-0.5 tracking-normal">parent #{{ session.parentSessionId }}</span>
+                            <span class="rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 px-1.5 py-0.5 font-medium border border-teal-500/15 tracking-normal text-[9.5px]">{{ profileDisplayName(session.profileKey) }}</span>
+                            <span class="font-mono text-[9px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 py-0.5 rounded border border-[var(--border-color)] uppercase tracking-normal">{{ session.profileKey }}</span>
+                            <span v-if="session.parentSessionId" class="rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 font-medium border border-purple-500/15 tracking-normal text-[9.5px]">协作父会话 #{{ session.parentSessionId }}</span>
                         </div>
                     </div>
-                    <button class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40" :disabled="actionId === session.sessionId || loading || !canArchiveSession(session)" title="Archive" @click.stop="emit('archive', session)">
+                    <button class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40" :disabled="actionId === session.sessionId || loading || !canArchiveSession(session)" title="Archive" @click.stop="emit('archive', session)">
                         <span v-if="actionId === session.sessionId" class="i-lucide-loader-circle h-4 w-4 animate-spin"></span>
                         <span v-else class="i-lucide-archive h-4 w-4"></span>
                     </button>

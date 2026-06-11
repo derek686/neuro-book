@@ -8,7 +8,7 @@ import {profileText} from "nbook/server/agent/profiles/profile-text";
 
 export const profileManifest = {
     key: "director",
-    name: "Director",
+    name: "剧情导演",
     description: "剧情导演：管理 Thread / Scene / Plot，设计剧情结构、节奏、伏笔和章节 handoff，不写正文也不维护 simulation state。",
 } as const;
 

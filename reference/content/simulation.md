@@ -9,7 +9,7 @@ simulation/
 |-- subjects/
 |   `-- {subject-id}/
 |       |-- subject.md
-|       |-- memory-seed.md
+|       |-- soul.md
 |       |-- events.jsonl
 |       |-- memory.jsonl
 |       |-- mind.md
@@ -57,7 +57,7 @@ Current RP / simulation profile contract:
 | --- | --- | --- | --- |
 | `rp.leader` | RP host and user-facing coordinator. It manages quickstart, table contract, companion-mode conversation, player-safe explanation and handoff to simulation. It may call `simulator.leader` for world adjudication instead of silently rewriting runtime state. | `AGENTS.md`, `manual/README.md`, `manual/player-guide/`, `manual/gm-guide.md`, `agent-context/rp.leader/context.md`, `agent-context/rp.leader/memory.md`, and user-approved context. | RP-facing notes only when explicitly requested or approved. Runtime state changes should be handed to `simulator.leader` or written only after clear user authorization and simulation contract review. |
 | `simulator.leader` | World simulator leader shared by writing mode and RP. It understands the task or user action, dispatches actor emulators, adjudicates the world, maintains state/entities, builds writer-safe brief and reports the result. | `AGENTS.md`, `agent-context/simulator.leader/context.md`, recent `simulation/runs/`, subject/entity state, Plot context and god-view lorebook / reference allowed by its context. | Approved subject `state.md`, `simulation/entities/`, necessary `simulation/runs/` and explicit simulation context changes. New subjects/entities should be reported before creation unless the current prompt explicitly grants automatic authority. |
-| `simulator.actor` | Single-subject simulator. It only uses actor-safe context injected by sidecar and the current actor-facing packet to output a character response. | Main run sees actor binding metadata, `<actor-sidecar-context>` and the current actor-facing packet. `actor.context-load` sidecar can read small bound files (`subject.md`, `mind.md`, `state.md`) and use subject RAG over `events.jsonl` / `memory.jsonl`. | Main run does not write files; `actor.memory-save` sidecar may append `events.jsonl`, curate `memory.jsonl`, and update `mind.md`. |
+| `simulator.actor` | Single-subject simulator. Its main run Imports `soul.md` (first-person roleplay handbook) as identity, and only uses actor-safe context injected by sidecar plus the current actor-facing packet. It never sees `subject.md` (god-view secret file). | Main run sees `soul.md`, actor binding metadata, `<actor-sidecar-context>` and the current actor-facing packet. `actor.context-load` sidecar is a pure RAG retriever: it reads no files and only runs subject RAG over `events.jsonl` / `memory.jsonl`. | Main run does not write files; `actor.memory-save` sidecar appends `events.jsonl`, curates `memory.jsonl`, and updates `mind.md`. It reads/writes neither `subject.md`, `soul.md` nor `state.md`. |
 | `rp.writer` | Tick prose renderer. It turns an upstream writer brief into user-visible prose, keeping the small-cat writer preset and RP storytelling tone. | Profile input is empty. It only consumes the current writer brief and reads extra paths when the brief explicitly asks it to. | Normal assistant prose; writes files only when writer brief explicitly specifies an output path. |
 
 `simulator.leader` must not hand complete `simulation/`, `lorebook/` or `reference/` to actor / writer. It filters god-view context into actor-facing messages or writer briefs.
@@ -73,10 +73,11 @@ Current RP / simulation profile contract:
 ```ts
 type SubjectSimulatorInput = {
     subjectPath: string;
+    kind: "player" | "npc";
 };
 ```
 
-`subjectPath` points to the subject directory in Agent cwd-relative project form, such as `{project}/simulation/subjects/erina`. The profile derives `subject.md`, `events.jsonl`, `memory.jsonl`, `mind.md` and `state.md` from that directory for sidecar prompts. Callers should not pass separate file paths.
+`subjectPath` points to the subject directory in Agent cwd-relative project form, such as `{project}/simulation/subjects/erina`. `kind` comes from the subject's `subject.md` frontmatter and selects the actor behavior rules (player avatar vs free-acting npc). The profile derives `subject.md`, `soul.md`, `events.jsonl`, `memory.jsonl`, `mind.md` and `state.md` from that directory; `soul.md` is Imported into the actor main run, while the rest are used for sidecar prompts. Callers should not pass separate file paths.
 
 ## Subjects
 
@@ -85,7 +86,7 @@ type SubjectSimulatorInput = {
 ```text
 simulation/subjects/{subject-id}/
 |-- subject.md
-|-- memory-seed.md
+|-- soul.md
 |-- events.jsonl
 |-- memory.jsonl
 |-- mind.md
@@ -94,8 +95,8 @@ simulation/subjects/{subject-id}/
 
 | File | Purpose |
 | --- | --- |
-| `subject.md` | Subject simulation instruction, stable personality, voice and action principles. |
-| `memory-seed.md` | Initialization memory seed. Convert it into first `events.jsonl` / `memory.jsonl` records when creating a subject; do not reread it as live memory each turn. |
+| `subject.md` | God-view secret file. Only `simulator.leader` may read it. Holds hidden truths, author intent and dispatch hints. Never injected into the actor. |
+| `soul.md` | First-person roleplay handbook (no frontmatter). Imported directly into the actor main run as the character's identity. Contains only what the character knows about itself; no secrets. |
 | `events.jsonl` | Append-only episodic memory. Each line is `{ tick?, time?, text }` and records what the subject experienced, observed, was told, thought, misunderstood or inferred at that time. |
 | `memory.jsonl` | Editable stable memory. Each line is `{ topic, aliases?, view }` and records the subject's current view or understanding of a person, place, object, concept, organization or self-related stable constraint. |
 | `mind.md` | Current short-term psychology, doubts, judgement, motivation and emotions. |
@@ -103,11 +104,11 @@ simulation/subjects/{subject-id}/
 
 ## Subject RAG Memory
 
-`events.jsonl` and `memory.jsonl` are the only subject files indexed by the first Subject RAG implementation. `subject_rag_search` treats `{project}/.nbook/subject-rag.sqlite` as a rebuildable SQLite + sqlite-vec cache; the JSONL files remain the source of truth.
+`events.jsonl` and `memory.jsonl` are the only subject files indexed by the first Subject RAG implementation. `subject.md` and `soul.md` are never indexed: `subject.md` holds god-view secrets and `soul.md` is already Imported into the actor main run. `subject_rag_search` treats `{project}/.nbook/subject-rag.sqlite` as a rebuildable SQLite + sqlite-vec cache; the JSONL files remain the source of truth.
 
 The index is scoped by `subject_path` and `source_type`, so an actor can only recall the current subject's own episodic memories and stable views. It does not search lorebook, Project-wide files or other subjects.
 
-`actor.context-load` uses `subject_rag_search` for coarse recall, reranks and compresses candidates, then persists a small `<actor-sidecar-context>` into the actor session. `actor.memory-save` appends `events.jsonl` through `subject_event_append` and curates `memory.jsonl` through `subject_memory_update`.
+`actor.context-load` is a pure RAG retriever: it reads no files, uses `subject_rag_search` for coarse recall, reranks and compresses candidates, then persists a small `<actor-sidecar-context>` into the actor session. `actor.memory-save` appends `events.jsonl` through `subject_event_append` and curates `memory.jsonl` through `subject_memory_update`, and does not touch `subject.md`, `soul.md` or `state.md`.
 
 Embedding configuration is separate from Pi chat / vision model settings. Global Config owns the OpenAI-compatible embedding service; Project Config may only override embedding model and dimensions.
 
@@ -173,7 +174,7 @@ For a new concept, classify in this order:
 
 1. Is it stable canon, subject-facing knowledge, entity runtime state, plot plan, run process artifact or raw external material?
 2. Stable canon goes to the most fitting `lorebook/` type.
-3. Subject-facing knowledge goes to `simulation/subjects/{id}/`.
+3. Subject-facing knowledge goes to `simulation/subjects/{id}/`. Split by visibility: what the character knows about itself goes to `soul.md`; hidden truths and author intent go to the god-view `subject.md`. See [../agent/rp-tick/subject-authoring.md](../agent/rp-tick/subject-authoring.md).
 4. Stateful instances go to `simulation/entities/{id}/`.
 5. Runtime process goes to `simulation/runs/`.
 6. Plot planning goes to Plot System.

@@ -196,6 +196,7 @@ describe("RP builtin profiles", () => {
                 }),
                 input: {
                     subjectPath: `${fixture.projectSlug}/simulation/subjects/heroine`,
+                    kind: "npc",
                 },
                 vars: createTestVariableAccessor(),
                 catalog: {profiles: [], issues: []},
@@ -212,7 +213,7 @@ describe("RP builtin profiles", () => {
             expect(sidecars.map((sidecar) => sidecar.name)).toEqual(["actor.context-load", "actor.memory-save"]);
             expect(contextLoad).toEqual(expect.objectContaining({
                 stage: "prepareRun",
-                allowedToolKeys: ["subject_rag_search", "read", "report_result"],
+                allowedToolKeys: ["subject_rag_search", "report_result"],
             }));
             expect(memorySave).toEqual(expect.objectContaining({
                 stage: "settleRun",
@@ -235,6 +236,7 @@ describe("RP builtin profiles", () => {
                     }),
                     input: {
                         subjectPath: `${fixture.projectSlug}/simulation/subjects/heroine`,
+                        kind: "npc",
                     },
                     runResult: {
                         status: "completed",
@@ -263,6 +265,7 @@ describe("RP builtin profiles", () => {
                     }),
                     input: {
                         subjectPath: `${fixture.projectSlug}/simulation/subjects/heroine`,
+                        kind: "npc",
                     },
                     invocationId: "test-invocation",
                     profileKey: "simulator.actor",
@@ -275,14 +278,16 @@ describe("RP builtin profiles", () => {
             expect(memorySavePrompt).toContain("eventsPath");
             expect(memorySavePrompt).toContain(`subjectPath: ${fixture.projectSlug}/simulation/subjects/heroine`);
             expect(memorySavePrompt).toContain("subjectPath 必须使用上面的 subjectPath");
-            expect(memorySavePrompt).toContain("根据 visible_response、spoken_dialogue、inner_response 和本轮上下文判断是否需要更新");
-            expect(memorySavePrompt).toContain("不要修改 statePath");
-            expect(systemPrompt).toContain("<actor_definition>");
-            expect(systemPrompt).toContain("<actor id=\"heroine\" kind=\"subject\">heroine</actor>");
-            expect(systemPrompt).toContain("你就是这个角色本人");
+            expect(memorySavePrompt).toContain("从上面的 report_result.data 提取 visible_response、spoken_dialogue、inner_response");
+            expect(memorySavePrompt).toContain("不读取也不写 subject.md、soul.md、state.md");
+            expect(memorySavePrompt).toContain("只有对应写入工具实际调用成功后");
+            expect(memorySavePrompt).toContain("changed_files 必须返回空数组");
+            expect(systemPrompt).toContain("<actor>");
+            expect(systemPrompt).toContain("<subject id=\"heroine\" kind=\"npc\" />");
+            expect(systemPrompt).toContain("你就是 soul.md 描述的那个人");
             expect(systemPrompt).toContain("<thinking_mode>");
-            expect(systemPrompt).toContain("请以 heroine 的第一人称进行人物分析");
-            expect(systemPrompt).toContain("思考示例：<｜begin▁of▁thinking｜>我是 heroine");
+            expect(systemPrompt).toContain("请以 soul.md 里这个人的第一人称进行人物分析");
+            expect(systemPrompt).toContain("我先按 soul.md 确认我是谁");
             expect(systemPrompt).toContain("你的思考应严格按以下顺序进行");
             expect(systemPrompt).toContain("回顾 <actor-sidecar-context>");
             expect(systemPrompt).toContain("<message_tags>");
@@ -290,10 +295,11 @@ describe("RP builtin profiles", () => {
             expect(systemPrompt).toContain("report_result.result");
             expect(systemPrompt).toContain("inner_response");
             expect(systemPrompt).not.toContain("questions");
-            expect(systemPrompt).toContain("如果你扮演的是玩家 actor");
+            expect(systemPrompt).toContain("<npc_rules>");
+            expect(systemPrompt).not.toContain("<player_rules>");
             expect(systemPrompt).toContain("主扮演阶段实际只能执行 report_result");
             expect(systemPrompt).toContain("不要调用 read、write、edit、subject_rag_search、subject_event_append 或 subject_memory_update");
-            expect(systemPrompt).toContain("你看不到 subject.md、events.jsonl、memory.jsonl、mind.md、state.md 原文");
+            expect(systemPrompt).toContain("你看不到 subject.md（全知秘密档，只给上级模拟器）");
             expect(systemPrompt).toContain("文件维护由 actor.context-load / actor.memory-save 旁路处理");
             expect(systemPrompt).toContain("visible_response");
             expect(systemPrompt).toContain("我只表达角色反应本身");
@@ -303,12 +309,14 @@ describe("RP builtin profiles", () => {
             expect(systemPrompt).toContain("<knowledge>");
             expect(systemPrompt).toContain("<directive>");
             expect(systemPrompt).toContain("<actor-sidecar-context>");
+            expect(systemPrompt).toContain("人设以 soul.md 为准");
             expect(systemPrompt).not.toContain("knowledge.md 使用二级章节归类");
             expect(systemPrompt).not.toContain("not_known_to_you");
             expect(systemPrompt).not.toContain("必要时可更新");
             expect(modelContextText).toContain("<actor_binding>");
             expect(modelContextText).toContain("actorId: heroine");
-            expect(modelContextText).toContain("actorName: heroine");
+            expect(modelContextText).toContain("kind: npc");
+            expect(modelContextText).not.toContain("actorName: heroine");
             expect(modelContextText).toContain(`subjectPath: ${fixture.projectSlug}/simulation/subjects/heroine`);
             expect(modelContextText).toContain("这些路径只供 actor.context-load / actor.memory-save 旁路使用");
             expect(modelContextText).not.toContain("<subject_instruction>");
@@ -329,7 +337,7 @@ describe("RP builtin profiles", () => {
             expect(appendingText).toContain("Runtime Location");
             expect(appendingText).not.toContain("只回应当前 user message");
         } finally {
-            await rm(fixture.workspaceRoot, {recursive: true, force: true});
+            await fixture.cleanup();
         }
     });
 
@@ -351,7 +359,7 @@ describe("RP builtin profiles", () => {
             stage: "prepareRun",
             sessionId: -1,
             session: testSession({profileKey: "simulator.actor"}),
-            input: {subjectPath: "rp-project/simulation/subjects/heroine"},
+            input: {subjectPath: "rp-project/simulation/subjects/heroine", kind: "npc"},
             invocationId: "test-invocation",
             profileKey: "simulator.actor",
             caller: {kind: "sidecar"},
@@ -364,7 +372,7 @@ describe("RP builtin profiles", () => {
             stage: "prepareRun",
             sessionId: -1,
             session: testSession({profileKey: "simulator.actor"}),
-            input: {subjectPath: "rp-project/simulation/subjects/heroine"},
+            input: {subjectPath: "rp-project/simulation/subjects/heroine", kind: "npc"},
             invocationId: "test-invocation",
             profileKey: "simulator.actor",
             caller: {kind: "sidecar"},
@@ -372,6 +380,24 @@ describe("RP builtin profiles", () => {
             result: "loaded",
             sidecarData: "她知道自己正在学院区广场。",
         }).persistedMessages?.map(messageText).join("\n")).toContain("<actor-sidecar-context source=\"actor.context-load\">");
+        const normalizedContextText = contextLoad.merge({
+            name: "actor.context-load",
+            stage: "prepareRun",
+            sessionId: -1,
+            session: testSession({profileKey: "simulator.actor"}),
+            input: {subjectPath: "rp-project/simulation/subjects/heroine", kind: "npc"},
+            invocationId: "test-invocation",
+            profileKey: "simulator.actor",
+            caller: {kind: "sidecar"},
+        }, {
+            result: "loaded",
+            sidecarData: JSON.stringify({
+                type: "actor-safe-context",
+                text: "她知道自己正在学院区广场。",
+            }),
+        }).persistedMessages?.map(messageText).join("\n") ?? "";
+        expect(normalizedContextText).toContain("她知道自己正在学院区广场。");
+        expect(normalizedContextText).not.toContain("\"type\":\"actor-safe-context\"");
     });
 
     it("simulator.actor 复用 subject simulator 合同并注入新 profile 身份", async () => {
@@ -388,6 +414,7 @@ describe("RP builtin profiles", () => {
                 }),
                 input: {
                     subjectPath: `${fixture.projectSlug}/simulation/subjects/heroine`,
+                    kind: "npc",
                 },
                 vars: createTestVariableAccessor(),
                 catalog: {profiles: [], issues: []},
@@ -401,11 +428,43 @@ describe("RP builtin profiles", () => {
             expect(simulatorActorProfile.allowedToolKeys).toEqual(["subject_rag_search", "subject_event_append", "subject_memory_update", "read", "edit", "report_result"]);
             expect(simulatorActorProfile.mainRunAllowedToolKeys).toEqual(["report_result"]);
             expect(systemPrompt).toContain("<profile>simulator.actor</profile>");
-            expect(systemPrompt).toContain("<actor id=\"heroine\" kind=\"subject\">heroine</actor>");
+            expect(systemPrompt).toContain("<subject id=\"heroine\" kind=\"npc\" />");
             expect(modelContextText).toContain("<actor_binding>");
             expect(modelContextText).toContain("memoryPath");
         } finally {
-            await rm(fixture.workspaceRoot, {recursive: true, force: true});
+            await fixture.cleanup();
+        }
+    });
+
+    it("simulator.actor kind=player 注入 player_rules 而非 npc_rules", async () => {
+        const fixture = await createRoleplayFixture();
+        try {
+            const prepared = await simulatorActorProfile.prepare!({
+                session: testSession({
+                    profileKey: "simulator.actor",
+                    workspaceRoot: fixture.workspaceRoot,
+                    customState: {},
+                    linkedAgents: [],
+                    archived: false,
+                    planModeActive: false,
+                }),
+                input: {
+                    subjectPath: `${fixture.projectSlug}/simulation/subjects/heroine`,
+                    kind: "player",
+                },
+                vars: createTestVariableAccessor(),
+                catalog: {profiles: [], issues: []},
+                skills: [],
+            });
+            const systemPrompt = prepared.systemPrompt ?? "";
+            const modelContextText = messagesText(prepared.modelContextMessages);
+
+            expect(systemPrompt).toContain("<subject id=\"heroine\" kind=\"player\" />");
+            expect(systemPrompt).toContain("<player_rules>");
+            expect(systemPrompt).not.toContain("<npc_rules>");
+            expect(modelContextText).toContain("kind: player");
+        } finally {
+            await fixture.cleanup();
         }
     });
 
@@ -462,7 +521,7 @@ describe("RP builtin profiles", () => {
             expect(modelContextText).toContain("不要生成选项、标题、摘要或解释");
             expect(appendingText).toContain("Runtime Location");
         } finally {
-            await rm(fixture.workspaceRoot, {recursive: true, force: true});
+            await fixture.cleanup();
         }
     });
 
@@ -477,8 +536,18 @@ describe("RP builtin profiles", () => {
         const npcSubject = await readFile(join(templateRoot, "subjects", "sample-npc", "subject.md"), "utf-8");
         expect(playerSubject).toContain("profile: simulator.actor");
         expect(playerSubject).toContain("controlledBy: user");
+        expect(playerSubject).toContain("隐藏设定与真相");
         expect(npcSubject).toContain("id: sample-npc");
         expect(npcSubject).toContain("controlledBy: simulator");
+        expect(npcSubject).toContain("隐藏设定与真相");
+        const playerSoul = await readFile(join(templateRoot, "subjects", "player", "soul.md"), "utf-8");
+        const npcSoul = await readFile(join(templateRoot, "subjects", "sample-npc", "soul.md"), "utf-8");
+        expect(playerSoul).toContain("我是谁");
+        expect(playerSoul).not.toMatch(/^---/);
+        expect(npcSoul).toContain("我是谁");
+        expect(npcSoul).not.toMatch(/^---/);
+        await expect(readFile(join(templateRoot, "subjects", "player", "memory-seed.md"), "utf-8")).rejects.toThrow();
+        await expect(readFile(join(templateRoot, "subjects", "sample-npc", "memory-seed.md"), "utf-8")).rejects.toThrow();
         await expect(readFile(join(templateRoot, "subjects", "player", "events.jsonl"), "utf-8")).resolves.toMatch(/起始场景/);
         await expect(readFile(join(templateRoot, "subjects", "player", "memory.jsonl"), "utf-8")).resolves.toMatch(/示例 NPC/);
         await expect(readFile(join(templateRoot, "subjects", "sample-npc", "events.jsonl"), "utf-8")).resolves.toMatch(/起始场景/);
@@ -506,19 +575,29 @@ describe("RP builtin profiles", () => {
     });
 });
 
-async function createRoleplayFixture(): Promise<{workspaceRoot: string; projectSlug: string}> {
-    const workspaceRoot = resolve(".agent", "workspace", "rp-profile-test", randomUUID());
+async function createRoleplayFixture(): Promise<{workspaceRoot: string; projectSlug: string; cleanup: () => Promise<void>}> {
+    // actor 主路 Import soul.md 时按 repo-root 解析 workspace/${subjectPath}/soul.md，
+    // 所以 fixture 必须把 subject 目录放在 repo-root workspace/ 下，workspaceRoot 指向 resolve("workspace")。
+    const workspaceRoot = resolve("workspace");
     const projectSlug = `rp-project-${randomUUID()}`;
-    const actorRoot = join(workspaceRoot, projectSlug, "simulation", "subjects", "heroine");
+    const projectRoot = join(workspaceRoot, projectSlug);
+    const actorRoot = join(projectRoot, "simulation", "subjects", "heroine");
     await mkdir(actorRoot, {recursive: true});
-    await writeFile(join(actorRoot, "subject.md"), "保持礼貌但警惕，遇到未知物品会先询问来源。", "utf-8");
+    await writeFile(join(actorRoot, "soul.md"), "# 我是谁\n\n我是海音。我话不多，遇到未知物品会先问来源。", "utf-8");
+    await writeFile(join(actorRoot, "subject.md"), "全知秘密档：海音其实受学院密令观察主角。", "utf-8");
     await writeFile(join(actorRoot, "events.jsonl"), "{\"text\":\"她第一次在广场边缘见到主角，还没有确认对方目的。\"}\n", "utf-8");
     await writeFile(join(actorRoot, "memory.jsonl"), "{\"topic\":\"主角\",\"view\":\"她相信主角值得观察，但还不知道世界之心的真名。\"}\n", "utf-8");
     await writeFile(join(actorRoot, "mind.md"), "她正在判断主角的用意，暂时不想显露紧张。", "utf-8");
     await writeFile(join(actorRoot, "state.md"), "她位于学院区广场边缘，双手空着，状态正常。", "utf-8");
-    await mkdir(join(workspaceRoot, projectSlug, "agent-context", "rp.writer"), {recursive: true});
-    await writeFile(join(workspaceRoot, projectSlug, "agent-context", "rp.writer", "context.md"), "正文要保留角色信息差，不泄露 simulator leader 隐藏设定。", "utf-8");
-    return {workspaceRoot, projectSlug};
+    await mkdir(join(projectRoot, "agent-context", "rp.writer"), {recursive: true});
+    await writeFile(join(projectRoot, "agent-context", "rp.writer", "context.md"), "正文要保留角色信息差，不泄露 simulator leader 隐藏设定。", "utf-8");
+    return {
+        workspaceRoot,
+        projectSlug,
+        cleanup: async () => {
+            await rm(projectRoot, {recursive: true, force: true});
+        },
+    };
 }
 
 function testSession(input: Partial<NeuroSessionContext>): RuntimeSessionFacade {

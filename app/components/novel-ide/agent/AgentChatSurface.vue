@@ -182,8 +182,8 @@ const createProfileOptions = computed<LeaderCreateProfileOption[]>(() => {
     ];
     if (ideStore.workspaceKind !== "user-assets") {
         options.push(
-            {profileKey: "leader.default", label: "写作助手", iconClass: profileIconClass("leader.default")},
-            {profileKey: "rp.leader", label: "RP 主持", iconClass: profileIconClass("rp.leader")},
+            {profileKey: "leader.default", label: "主创", iconClass: profileIconClass("leader.default")},
+            {profileKey: "rp.leader", label: "跑团主持", iconClass: profileIconClass("rp.leader")},
             {profileKey: "simulator.leader", label: "世界模拟", iconClass: profileIconClass("simulator.leader")},
         );
     }
@@ -240,9 +240,9 @@ function pendingUserInputKey(session: typeof pendingUserInputSession.value): str
 function profileDisplayName(profileKey: string): string {
     switch (profileKey) {
         case "leader.assets": return "用户资产助手";
-        case "rp.leader": return "RP 主持";
+        case "rp.leader": return "跑团主持";
         case "simulator.leader": return "世界模拟";
-        case "leader.default": return "AI 写作助手";
+        case "leader.default": return "主创";
         default: return profileKey;
     }
 }
@@ -275,7 +275,7 @@ watch(() => pendingUserInputSession.value?.assistantMessageId ?? null, () => {
 
 const activeDrawerTitle = computed(() => profileDisplayName(activeSummary.value?.profileKey ?? leaderProfileKey.value));
 const activeSessionTitle = computed(() => activeSummary.value?.title || (activeSessionId.value ? `Session #${String(activeSessionId.value)}` : "未命名对话"));
-const activeSessionSummaryText = computed(() => activeSummary.value?.summary?.trim() || activeDrawerTitle.value);
+const activeSessionSummaryText = computed(() => activeSummary.value?.summary?.trim() || activeSummary.value?.lastMessagePreview?.trim() || "暂无消息");
 const summarizerStatus = computed<null | {
     label: string;
     icon: string;

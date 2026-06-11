@@ -13,7 +13,7 @@ const ENABLE_KITTEN_ADULT_STYLE = false;
 
 export const profileManifest = {
     key: "rp.writer",
-    name: "RP Writer",
+    name: "跑团写作",
     description: "RP Tick 正文渲染 agent：只消费上级注入的 writer brief，把裁决结果写成讲故事口吻的用户可见正文。",
 } as const;
 
