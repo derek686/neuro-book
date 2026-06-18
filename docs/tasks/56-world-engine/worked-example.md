@@ -173,7 +173,7 @@ subjectTypes:
 }
 ```
 
-> 演示「往前插切面」的灵活性：若作者此刻突然设定「黑潮战争其实还有前因，公元150年有过预兆」，只需在 `instant=4,633,? ` 处再 `writeSlice` 一条，timeline 自动按 instant 归位，已有切面不受影响（add 类 mutation 完全免疫，set 类如有依赖则 re-settle 重算 old —— 本例历史多为 listAppend / 独立 set，无冲突）。
+> 演示「往前插切面」的灵活性：若作者此刻突然设定「黑潮战争其实还有前因，公元150年有过预兆」，只需在 `instant=4,633,? ` 处再 `writeSlice` 一条，timeline 自动按 instant 归位。若这会影响后续已结算的 `old`，写入接口会返回 `needsResettle` 与影响范围，调用方再显式调用 `resettleTimeline`；本例历史多为 listAppend / 独立 set，无冲突。
 
 ## 5. 为世界填现状（接近「现在」的切片）
 

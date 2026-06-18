@@ -17,7 +17,7 @@
 - **写入即切面**：agent 不直接改 subject 状态，只能「写一个切面」（一组 mutation）。补过去 = 传一个更早的日历字符串，与写当前同一个工具。
 - **projectPath 必填**：对齐 plot 工具，agent 显式传 Project Path。
 - **时间用「日历字符串」传，不传数字**：LLM 不应处理 instant 秒数（如 `"15151500000"`），而是用人类可读的日历字符串（如 `"复兴纪元488年 风信之月15日 14:00"`）。工具层负责 string ↔ instant 双向转换，facade / 存储 / reduce 仍只认 `instant: bigint`。
-- **Calendar 进入第一版工具层**：第一版只要求项目 canonical 格式 parse/format 对称可逆；完整自定义历法、模糊时间和复杂自然语言时间可后续再做。
+- **Calendar 进入第一版工具层**：第一版允许项目自定义序列化 / 反序列化格式，像常见日期格式化库一样 parse/format 对称可逆；完整不规则历法、模糊时间和复杂自然语言时间可后续再做。
 
 ## 2. 工具集（第一版）
 
@@ -77,15 +77,50 @@ write_world_slice(projectPath, {
         op: "set" | "add" | "unset" | "listAppend" | "collectionAdd" | "collectionRemove",
         value?: JSON,        // unset 省略
     }>,
-}) -> { sliceId: string }
+}) -> { sliceId: string, needsResettle: boolean, affectedSubjects: string[], affectedMutations: number }
 ```
 
-- **补过去**：传一个比当前最新切面更早的 `time`，timeline 自动按 instant 归位。第一版即支持，并触发受影响 subject 的 re-settle。
-- **同 instant 合并**：如果 `time` 解析后的 instant 已有 slice，第一版默认把 mutations 合并进已有 slice；同一 instant 不创建第二个切面。title / summary / kind 的合并策略仍待定。
+- **补过去**：传一个比当前最新切面更早的 `time`，timeline 自动按 instant 归位。第一版即支持；工具返回 `needsResettle` 和影响范围，但不自动改后续 old。
+- **同 instant 冲突**：如果 `time` 解析后的 instant 已有 slice，第一版直接报错；修改已有时间点必须使用 `edit_world_slice`。
 - 写入时按项目 schema 校验 attr/op/value（宽松：未声明属性默认 scalar）；`set` 的 old 由 facade 结算。
-- 写入后可顺带返回受影响 subject 的最新精简状态（便于 agent 确认结果），或仅返回 sliceId（待定，见 §4）。
+- 写入后不返回新状态；agent 需要确认结果时再调用 `get_world_state`。
 
-### 2.4 创建 subject：`create_world_subject`
+### 2.4 编辑一个切面：`edit_world_slice`
+
+第一版用整块替换，避免过早设计局部 patch 语义。
+
+```
+edit_world_slice(projectPath, {
+    sliceId: string,
+    time: string,
+    title?: string,
+    summary?: string,
+    kind?: "event" | "init" | "correction" | "bootstrap",
+    mutations: Array<{
+        subjectId: string,
+        attr: string,
+        op: "set" | "add" | "unset" | "listAppend" | "collectionAdd" | "collectionRemove",
+        value?: JSON,
+    }>,
+}) -> { sliceId: string, needsResettle: boolean, affectedSubjects: string[], affectedMutations: number }
+```
+
+- 如果新 `time` 指向另一个已有 slice 的 instant，报错。
+- 编辑后只报告是否需要 re-settle，不自动改后续 old。
+
+### 2.5 显式重结算：`resettle_world_timeline`
+
+```
+resettle_world_timeline(projectPath, {
+    from: string,             // 日历字符串
+    subjectIds: string[],
+}) -> { from: string, subjects: string[], reSettledMutations: number }
+```
+
+- 由 `write_world_slice` / `edit_world_slice` 返回的 `affectedSubjects` 作为推荐输入。
+- 第一版按 subject 粗粒度重算，不做 attr/path 级优化。
+
+### 2.6 创建 subject：`create_world_subject`
 
 切面要引用 subject，subject 得先存在。
 
@@ -101,19 +136,35 @@ create_world_subject(projectPath, {
 - 生成 kind=init 的初始化切面，写 schema default 初值。
 - world subject 的 `time` 传项目日历的纪元起点字符串（如 `"复兴纪元1年"`）即锚定 instant=0（见 worked-example §3）。
 
+### 2.7 获取世界 schema：`get_world_schema`
+
+```
+get_world_schema(projectPath) -> {
+    subjectTypes: Array<{
+        type: string,
+        desc?: string,
+        attrs: Array<{ name: string, kind: string, type?: string, desc?: string }>
+    }>,
+    calendar: {
+        format: string,
+        examples: string[]
+    }
+}
+```
+
+- 给 Agent 精简 schema 和日历格式说明，避免直接读取大段 YAML 后写错 mutation。
+- 不替代 `world-engine/schema.yaml`，只是工具友好的投影。
+
 ## 3. 与 schema 的关系
 
 - 工具需要项目 schema（`world-engine/schema.yaml`）来校验 mutation、决定 reduce 语义、生成 `get_world_state` 的属性投影提示。
 - schema 由 facade 在 projectPath 上下文加载（读 `world-engine/schema.yaml`）；工具层不直接读文件。
-- agent 是否需要一个 `get_world_schema` 工具来查看「这个世界有哪些 subject 类型 / 属性」？倾向**需要**（类似 `get_agent_profile` 让 agent 自省），便于 agent 写出合法 mutation。列入 §4 待定。
+- `get_world_schema` 提供 Agent 友好的 schema 投影；需要完整配置时仍可直接 read `world-engine/schema.yaml`。
 - Calendar 由 facade / service 在 projectPath 上下文加载（读 `world-engine/calendar.yaml` 或默认配置）；工具层只负责把 Agent 输入输出映射为人读时间。
 
 ## 4. 遗留待定
 
-- `write_world_slice` 返回 sliceId 即可，还是顺带返回受影响 subject 的精简新状态。
-- 同 instant 合并时，已有 slice 与新输入的 title / summary / kind 如何合并，是否需要返回合并提示。
-- 是否加 `get_world_schema`（让 agent 查看 subject 类型 / 属性定义）。
 - `world.focus` session custom state 的具体形状与复用范围。
 - 工具是否需要审批（写切面是否要 approval）；第一版倾向不审批，对齐 plot 工具直接写。
-- 编辑 / 删除 / 回退切面的 agent 工具（第一版不做，对齐 facade 待定项）。
-- 把这些工具接入哪个 / 哪些 profile（simulator.leader 之类），以及旧 plot/rag 工具的退场顺序。
+- 删除 / 回退切面的 agent 工具（第一版不做，对齐 facade 待定项）。
+- 后续再决定接入哪个 / 哪些 profile（例如 simulator.leader）；第一版不接旧 simulation workflow。

@@ -45,7 +45,7 @@ const WebTimeoutMsSchema = z.number().int().positive().nullable().default(null);
 const ConfigQueryBooleanFlagSchema = z.union([
     z.boolean(),
     z.enum(["true", "false"]),
-]).optional().transform((value) => value === true || value === "true");
+]).optional();
 
 /**
  * Secret 字段的编辑态。GET 不返回 value；PUT 中 value 缺失表示保留。
@@ -301,7 +301,9 @@ export const ConfigEditorSnapshotDtoSchema = z.object({
 export type SecretConfigValueDto = z.infer<typeof SecretConfigValueDtoSchema>;
 export type ConfigItemMetaDto = z.infer<typeof ConfigItemMetaDtoSchema>;
 export type ConfigWorkspaceQueryDto = z.infer<typeof ConfigWorkspaceQueryDtoSchema>;
-export type ConfigEditorSnapshotQueryDto = z.infer<typeof ConfigEditorSnapshotQueryDtoSchema>;
+export type ConfigEditorSnapshotQueryDto = ConfigWorkspaceQueryDto & {
+    includeAgentProfileSettings: boolean;
+};
 export type ConfigModelSettingsDto = z.infer<typeof ConfigModelSettingsDtoSchema>;
 export type EmbeddingServiceConfigDto = z.infer<typeof EmbeddingServiceConfigDtoSchema>;
 export type EmbeddingProjectConfigDto = z.infer<typeof EmbeddingProjectConfigDtoSchema>;

@@ -744,6 +744,10 @@ export default defineAgentProfile({
   - `LowCodeComboboxField` 抽出内部 `useLowCodeComboboxDropdown()`，复用 `useFloatingPanelLayout()` 支持浮层自动向上/向下展开。
   - `LowCodeRadioField` 改为 segmented control 视觉，减弱选中态色块，保留原有值类型和保存语义。
 - 2026-06-19：提高 `FormSelect` 与 low-code combobox 下拉 option 浮层层级，减少在 Dialog 内被相邻容器遮盖的问题。
+- 2026-06-19：修复 Config editor snapshot 被 profile settings 构造拖慢的问题：
+  - `editor-snapshot`、`global.put`、`project.put` 增加 `includeAgentProfileSettings` query，默认只返回轻量 `agentProfileSettings`。
+  - 只有 Agent Profile 模型设置面板请求完整 settings form / value / issues，其他设置面板不触发低代码 options 与自定义校验解析。
+  - `AgentProfileCatalog.snapshot()` 增加 `hasSettingsForm`，完整模式也只对带 settings form 的 profile 执行 runtime `profiles.get()`。
 
 ## Verification
 
@@ -767,6 +771,10 @@ export default defineAgentProfile({
 - 低代码表单 UI 修正后追加验证：
   - `bun run typecheck`：通过。
 - 下拉浮层层级调整后追加验证：
+  - `bun run typecheck`：通过。
+- Config editor snapshot 按需加载修正后追加验证：
+  - `bun test server/config/query.test.ts server/config/config-service.test.ts`：39 pass。
+  - `bun run generate:openapi`：Config route meta 已刷新；仍有既有 24 个旧 Plot route 缺失提示，脚本退出成功。
   - `bun run typecheck`：通过。
 
 未作为本任务验收门的命令：

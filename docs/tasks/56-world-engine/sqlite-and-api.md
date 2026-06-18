@@ -11,13 +11,13 @@
 - **Project SQLite 只存运行态**：subject 实例、切面（slice）、逐条变更（mutation）。**与现有 plot 表共用同一个 `project.sqlite`**（一套 Prisma schema 维护，model 用 `World*` 前缀隔离）。
 - **mutation 一行一条（关系化）**：reduce 走 `(subjectId, instant)` 索引直接取相关 subject 的行，反查 / 曲线都是带索引 SQL。
 - **instant 用 SQLite INTEGER（64 位）**：原生整数索引，排序 / 范围查询飞快。上限约 2920 亿年（秒为刻）。API 层仍是 `bigint`，仅存储层用 64 位；超 64 位再升级编码，API 不变。
-- **同一 instant 只允许一个切面**：`WorldSlice.instant` 唯一。同一时刻的多 subject / 多属性变化全部合并进同一个 slice；目标 instant 已有 slice 时，`writeSlice` 第一版默认合并 mutations 到已有 slice。
+- **同一 instant 只允许一个切面**：`WorldSlice.instant` 唯一。同一时刻的多 subject / 多属性变化必须位于同一个 slice；目标 instant 已有 slice 时，`writeSlice` 第一版直接报错，修改已有时间点必须走 `editSlice`。
 - **reduce 在应用层算**：DB 只负责「高效取出某 subject ≤t 的全部 mutation，按 (instant, mutation seq) 排好」；按 op 叠加状态由应用层 reduce 函数完成（SQL 无法表达 object 路径 / collection 增删）。
 
 ### 第一版范围（最小化）
 
-- **第一版只做**：subject 实例 + 切面写入 / 同 instant 合并 + `getWorldState`（全量调试）+ `queryState`（业务 / Agent 入口）+ `listSlices` + 最小 re-settle。
-- **第一版不做**（推到后续）：`WorldSnapshot` 缓存、`findReferers` / `getAttrHistory` 等细分查询、回退 API。`old` 列进第一版，但它是 re-settle 维护的派生缓存，不是权威真相。
+- **第一版只做**：subject 实例 + 切面写入 + 切面编辑 + `getWorldState`（全量调试）+ `queryState`（业务 / Agent 入口）+ `listSlices` + 显式 `resettleTimeline`。
+- **第一版不做**（推到后续）：`WorldSnapshot` 缓存、`findReferers` / `getAttrHistory` 等细分查询、回退 API。`old` 列进第一版，但它是显式 re-settle 维护的派生缓存，不是权威真相。
 
 ## 2. SQLite 表结构（Prisma schema 草案，第一版最小）
 
@@ -111,6 +111,21 @@ interface SliceInput {
     mutations: MutationInput[];
 }
 
+/** 写入 / 编辑切面后的结算提示 */
+interface SliceWriteResult {
+    sliceId: string;
+    needsResettle: boolean;
+    affectedSubjects: string[];
+    affectedMutations: number;
+}
+
+/** 显式 re-settle 结果 */
+interface ResettleResult {
+    from: Instant;
+    subjects: string[];
+    reSettledMutations: number;
+}
+
 /** 某 subject 在某时刻 reduce 出的状态（ref 不展开，惰性） */
 interface SubjectState {
     subjectId: string;
@@ -130,9 +145,17 @@ class WorldEngineFacade {
     createSubject(projectPath: string, input: { id: string; type: string; name?: string; at: Instant }): Promise<void>;
 
     // —— 切面写入 ——
-    /** 写一个切面（校验 mutation 合法性，写 slice + mutation 行）。
-     *  instant 决定落点；若该 instant 已有 slice，第一版默认合并 mutations 到已有 slice。*/
-    writeSlice(projectPath: string, input: SliceInput): Promise<{ sliceId: string }>;
+    /** 写一个新切面（校验 mutation 合法性，写 slice + mutation 行）。
+     *  instant 决定落点；若该 instant 已有 slice，第一版直接报错，调用方应改用 editSlice。*/
+    writeSlice(projectPath: string, input: SliceInput): Promise<SliceWriteResult>;
+
+    /** 编辑已有切面。
+     *  第一版采用整块替换 title / summary / kind / mutations，避免局部 patch 语义过早复杂化。*/
+    editSlice(projectPath: string, sliceId: string, input: SliceInput): Promise<SliceWriteResult>;
+
+    /** 显式重结算 old 派生缓存。
+     *  从 from 开始，按 subject 粗粒度重算后续 mutation 的 old。*/
+    resettleTimeline(projectPath: string, input: { from: Instant; subjectIds: string[] }): Promise<ResettleResult>;
 
     // —— 状态查询（reduce）——
     /** 全量 reduce：instant（默认最新）的全量世界状态。给 UI / 调试 / 导出用，agent 不直接用（会爆 token）。*/
@@ -163,7 +186,7 @@ class WorldEngineFacade {
 }
 ```
 
-> 后续按需补充：`getAttrHistory`（HP 曲线）、`findReferers`（反查引用）、`editSlice` / `deleteSlice` / `revertSlice`（编辑与回退）。表结构与索引已为它们预留，不需要改 schema。re-settle 是写入 / 编辑 / 删除链路的内部能力，不单独作为 Agent API 暴露。
+> 后续按需补充：`getAttrHistory`（HP 曲线）、`findReferers`（反查引用）、`deleteSlice` / `revertSlice`（删除与回退）。表结构与索引已为它们预留，不需要改 schema。`editSlice` 与 `resettleTimeline` 进入第一版。
 
 ## 4. reduce 算法（应用层，伪代码）
 
@@ -184,20 +207,21 @@ getWorldState(at = 最新):
 - `applyOp` 按 attr 的 kind（从项目 schema 配置加载）决定叠加语义；未声明属性默认 scalar。
 - 第一版无 snapshot，从头叠；规模变大后再引入缓存，结果不变。
 
-## 5. re-settle（第一版最小）
+## 5. re-settle（第一版显式接口）
 
-`old` 是派生缓存，`value` / `op` / `attr` 才是声明式真相。任何会改变过去链条的写入都要触发 re-settle。
+`old` 是派生缓存，`value` / `op` / `attr` 才是声明式真相。任何会改变过去链条的写入都要报告 re-settle 需求，但第一版**不自动修改后续 old**。
 
 第一版触发：
 
 - `writeSlice` 写入的 instant 早于某 subject 的最新 mutation。
-- 同 instant 合并导致已有 slice 增加 mutation。
-- 后续加入 `editSlice` / `deleteSlice` 时，同样走本流程。
+- `editSlice` 修改已有 slice 的 mutations 或 instant。
+- 后续加入 `deleteSlice` 时，同样走本流程。
 
 第一版范围：
 
 - 按 subject 粗粒度重算，不做 attr/path 级优化。
-- 对本次切面触及的每个 subject，从该 instant 开始读取该 subject 的后续 mutation，按 `(instant, seq)` 排序。
+- 写入 / 编辑接口返回 `needsResettle`、`affectedSubjects`、`affectedMutations`，由调用方决定何时调用 `resettleTimeline(projectPath, { from, subjectIds })`。
+- `resettleTimeline` 对传入 subject，从 `from` 开始读取后续 mutation，按 `(instant, seq)` 排序。
 - 从该 instant 之前的状态开始 reduce，逐条重新计算需要记录 old 的 mutation，并更新其 `old`。
 - `add` 这类逆操作不依赖 old，但仍可在同一流程中保持一致。
 

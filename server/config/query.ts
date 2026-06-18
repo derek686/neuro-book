@@ -31,5 +31,9 @@ export function validateConfigEditorSnapshotQuery(query: unknown): ConfigEditorS
             message: parsed.error.issues[0]?.message ?? "配置请求参数不合法",
         });
     }
-    return parsed.data;
+    return {
+        ...parsed.data,
+        includeAgentProfileSettings: parsed.data.includeAgentProfileSettings === true
+            || parsed.data.includeAgentProfileSettings === "true",
+    };
 }

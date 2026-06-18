@@ -36,8 +36,21 @@ defineRouteMeta({
         {
             "name": "includeAgentProfileSettings",
             "in": "query",
-            "required": true,
-            "schema": {}
+            "required": false,
+            "schema": {
+                "anyOf": [
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "string",
+                        "enum": [
+                            "true",
+                            "false"
+                        ]
+                    }
+                ]
+            }
         }
     ],
     "responses": {
