@@ -45,6 +45,8 @@ export interface SelectionRangeLocation {
 const BRACKETED_SELECTION_PATTERN = /^\[\[([^\]\n]+?)\]\]/u;
 const SHORT_SELECTION_PATTERN = /^((?:\.?[\w@~.-][\w@~./\\-]*\/)?[\w@~.-][\w@~./\\-]*(?:\.[\w-]+)?#(?:L)?\d+(?:-(?:L)?\d+)?)(?=$|[\s,.;，。；、)）\]])/u;
 const CHIP_INNER_PATTERN = /^(.+?)(?:#(?:L)?(\d+)(?:-(?:L)?(\d+))?)?$/iu;
+const SHORT_SELECTION_START_BOUNDARY_PATTERN = /[\s([{"'“‘，。；、,;]/u;
+const URL_AUTHORITY_SEGMENT_PATTERN = /^[a-z0-9-]+\.[a-z0-9.-]+$/iu;
 
 /**
  * 生成 selection chip 的 canonical 文本。
@@ -72,11 +74,7 @@ export function parseSelectionRefChip(value: string): SelectionReferenceChip | n
         return parseSelectionChipInner(bracketed[1], bracketed[0]);
     }
 
-    const short = SHORT_SELECTION_PATTERN.exec(trimmed);
-    if (!short?.[1]) {
-        return null;
-    }
-    return parseSelectionChipInner(short[1], short[1]);
+    return parseShortSelectionChip(trimmed);
 }
 
 /**
@@ -89,11 +87,10 @@ export function readSelectionRefChipAt(value: string, start: number): SelectionR
         return parseSelectionChipInner(bracketed[1], bracketed[0]);
     }
 
-    const short = SHORT_SELECTION_PATTERN.exec(slice);
-    if (!short?.[1]) {
+    if (!canStartShortSelection(value, start)) {
         return null;
     }
-    return parseSelectionChipInner(short[1], short[1]);
+    return parseShortSelectionChip(slice);
 }
 
 /**
@@ -169,18 +166,66 @@ function parseSelectionChipInner(inner: string, raw: string): SelectionReference
     };
 }
 
+/**
+ * 解析无括号短格式 selection chip，并额外校验它是否像文件路径。
+ */
+function parseShortSelectionChip(value: string): SelectionReferenceChip | null {
+    const short = SHORT_SELECTION_PATTERN.exec(value);
+    if (!short?.[1]) {
+        return null;
+    }
+    const chip = parseSelectionChipInner(short[1], short[1]);
+    if (!chip || !isSafeShortSelectionPath(chip.path)) {
+        return null;
+    }
+    return chip;
+}
+
+/**
+ * 短格式没有 [[...]] 的显式边界，必须避免从普通单词或 URL 中间截出 chip。
+ */
+function canStartShortSelection(value: string, start: number): boolean {
+    if (start <= 0) {
+        return true;
+    }
+    if (value.slice(Math.max(0, start - 3), start) === "://") {
+        return false;
+    }
+    return SHORT_SELECTION_START_BOUNDARY_PATTERN.test(value[start - 1] ?? "");
+}
+
+/**
+ * 规范化 selection chip 内部路径。
+ */
 function normalizeSelectionPath(path: string): string {
     return path.trim().replace(/\\/g, "/").replace(/^\.\//u, "");
 }
 
+/**
+ * 生成 chip 内展示用的短文件名。
+ */
 function compactPathLabel(path: string): string {
     return path.split("/").filter(Boolean).at(-1) ?? path;
 }
 
+/**
+ * 拒绝绝对路径、上级目录和协议路径，避免 chip 表示越界目标。
+ */
 function isSafeSelectionPath(path: string): boolean {
     return Boolean(path)
         && !path.startsWith("/")
         && !path.includes("..")
         && !/\s/u.test(path)
         && !/^[a-z][a-z0-9+.-]*:/iu.test(path);
+}
+
+/**
+ * 短格式必须带目录分隔符，并排除 URL host/path 形态。
+ */
+function isSafeShortSelectionPath(path: string): boolean {
+    if (!isSafeSelectionPath(path) || !path.includes("/")) {
+        return false;
+    }
+    const firstSegment = path.split("/").find(Boolean) ?? "";
+    return !URL_AUTHORITY_SEGMENT_PATTERN.test(firstSegment);
 }

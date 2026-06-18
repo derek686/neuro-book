@@ -1,0 +1,182 @@
+# World Engine — Schema 设计草案
+
+> 本文件是 [README.md](README.md) 的子文档，承载 subject schema 字段格式与完整示例。
+> 状态：**草案 / 讨论中**，未定论。定论后回填 README「Decisions」并标注。
+
+## 1. schema 在系统里的位置
+
+- schema 是**项目级资产**，YAML/JSON 配置文件，放 Project Workspace（目录见 §6 待定）。
+- 按**类型**声明：`character` / `quest` / `location` / `item` / `faction`…，subject 是某类型的实例。
+- 引擎只认抽象概念（Subject / Slice / Instant / op / reduce）；schema 告诉引擎「这个世界的某类 subject 有哪些属性、每个属性用什么 op 语义叠加」。
+- 运行时用 TypeBox 校验 mutation 是否合法（属性存在、op 与属性语义匹配、值类型对）。
+
+## 2. 属性的「op 语义类」（kind）
+
+每个属性声明一个 **kind**，kind 决定它接受哪些 op、reduce 怎么叠加、逆操作怎么算。这是 op 全集与 schema 的接缝。
+
+| kind | 接受的 op | reduce 语义 | 典型属性 |
+| --- | --- | --- | --- |
+| `scalar` | `set` / `add` / `unset` | set 重置为绝对值；add 在前值上累加（数值）；当前值 = 按序应用 | hp、level、location(ref)、status |
+| `list` | `listAppend` | 只增有序流，当前值 = 全部追加项按序 | events 经历流、quest.log |
+| `collection` | `collectionAdd` / `collectionRemove` | 可增删无序集合，当前值 = 现存元素集合 | 背包物品、附魔、宗门弟子 |
+| `object` | 对子字段 / key 做 `set`/`add`/`unset`，或整体 `set` | 嵌套结构；有 `fields` = 固定结构，无 `fields` 只有 `itemType` = 开放 key 字典 | equipment{head,chest}（固定）、memory by topic（开放） |
+
+说明：
+- **`object` 统一了固定结构与开放字典**（不再分 map/object 两个 kind）：声明了 `fields` 就是固定 schema 结构（装备槽位固定）；只声明 `itemType`、不声明 `fields` 就是开放 key 字典（memory 的 topic 运行时增减）。子字段 / key 都用路径 `set`/`unset`。
+- **`scalar` 同时支持 set 与 add**：
+  - `set` = 绝对值（「等级升到 5」「status 改成 done」）。
+  - `add` = 相对增量（「扣 20 血」「国库 +1000」），**仅对数值类型有效**。
+  - add 的价值是**架构性的、与 LLM 算力无关**：add 可交换、对「往前插切面」免疫（前面插一个变更，后续 add 增量不变，reduce 自动正确）；而 set 是绝对值，对插入敏感、依赖 re-settle。add 的逆操作极干净：`add +30` 的逆 = `add -30`，**不依赖 old 值**。
+  - 没有 track。「hp 随时间曲线」= 遍历所有打在 hp 上的 mutation（每条带 instant + op + 值），从切面序列直接 reduce 出轨迹。
+- `object` 固定结构的更新优先打**细路径**（`equipment.head`）保留逐槽位历史；整体 `set equipment = {...}` 留给「换整套」。
+
+## 3. 属性字段格式（schema 怎么写一个属性）
+
+```yaml
+# 一个属性的完整可选字段
+<attrName>:
+  kind:    scalar | list | collection | object         # 必填，决定 op 语义
+  type:    int | float | text | bool | enum | ref(<type>)   # 值类型（scalar / 元素类型）
+  enum:    [...]            # kind=scalar 且 type=enum 时的取值集合
+  ref:     <subjectType>    # type=ref 时指向的 subject 类型（用于校验与反查）
+  fields:  { ... }          # kind=object 且为固定结构时的子字段（递归同结构）
+  itemType: <type>          # kind=list / collection 的元素类型；kind=object 无 fields 时的 value 类型（开放字典）
+  default: <value>          # subject 创建时写入「初始化切面」的初值（见 §7）
+  desc:    "..."            # 给作者/Agent 看的说明
+```
+
+**校验严格度（定论：宽松）**：mutation 打在 schema **未声明**的属性上是**允许**的（动态属性）。schema 是「建议结构 + 已知属性的 op 语义」，不是强约束。已知属性按声明的 kind 校验 op 是否合法、值类型是否对；未知属性默认按 `scalar` 处理。这样 Agent 不必先改 schema 才能记一个新属性。
+
+## 4. ref 引用格式（定论：`subject://<id>` 纯 id）
+
+- subject 引用统一用 **`subject://<id>`**（纯 id，不编码 type），对齐项目 `{kind}://{targetId}` 惯例（同构于 `thread://22`）。
+- **单一 scheme 覆盖所有 subject 类型**：character / item / location / faction 都是 subject，只是 `type` 不同；type 从 `WorldSubject` 表查，不进 URI。
+- id 全局唯一（`WorldSubject.id` 主键）；反查「谁引用了某 subject」= 匹配 `value = "subject://<id>"`。
+- 未来可加进 `shared/reference-core.ts` 的 kinds，让正文 `@subject://erina` 自然提及一个角色。
+- schema 里属性写 `type: ref(<subjectType>)`，`<subjectType>` 仅用于**校验目标 subject 的 type 是否匹配**与编辑期提示，不改变存储的 ref 串（存储恒为 `subject://<id>`）。
+
+## 4. 完整魔幻世界 schema 示例
+
+```yaml
+# 文件示意：<project>/<world-engine-dir>/schema.yaml
+subjectTypes:
+
+  # —— 人物（玩家与 NPC 共用）——
+  character:
+    desc: 有主观知识、会行动、会隐藏信息的角色
+    attrs:
+      # 数值属性：scalar，靠切面序列 reduce 出当前值与历史曲线
+      hp:        { kind: scalar, type: int,  default: 100, desc: 当前生命值 }
+      maxHp:     { kind: scalar, type: int,  default: 100 }
+      mp:        { kind: scalar, type: int,  default: 0 }
+      level:     { kind: scalar, type: int,  default: 1 }
+      age:       { kind: scalar, type: int }
+
+      # 当前所在地：scalar + ref（关系即引用属性，单向存）
+      location:  { kind: scalar, type: ref(location) }
+
+      # 当前心理 / 状态文本：scalar text，后盖前
+      mind:      { kind: scalar, type: text }
+
+      # 装备栏：object，子字段是固定槽位，每槽位是 ref(item)
+      equipment:
+        kind: object
+        fields:
+          head:   { type: ref(item) }
+          chest:  { type: ref(item) }
+          weapon: { type: ref(item) }
+
+      # 背包：collection，物品可增删（不是 list，因为会取走）
+      inventory: { kind: collection, itemType: ref(item) }
+
+      # 认知记忆：object 开放字典（无 fields，只有 itemType），key=topic 运行时增减改
+      memory:    { kind: object, itemType: text, desc: "key=角色当前认定的称呼，value=看法" }
+
+      # 经历流：list，只增有序（语义对齐旧 events.jsonl，但不再存文件）
+      events:    { kind: list, itemType: text }
+
+      # 关系：指向阵营。单向存，「阵营有哪些成员」靠反查
+      faction:   { kind: scalar, type: ref(faction) }
+
+  # —— 任务：本身是 subject（能独立演变状态）——
+  quest:
+    desc: 有独立状态、随时间演变的任务
+    attrs:
+      status:   { kind: scalar, type: enum, enum: [unstarted, active, done, failed], default: unstarted }
+      progress: { kind: scalar, type: float, default: 0 }
+      log:      { kind: list, itemType: text }
+      giver:    { kind: scalar, type: ref(character) }
+
+  # —— 装备 / 物品：有独立状态才作为 subject ——
+  item:
+    desc: 需要独立追踪状态的物品（普通物品可只作为 character.inventory 的元素，不必建 subject）
+    attrs:
+      durability: { kind: scalar, type: int }
+      # 附魔：collection，可增删多个附魔
+      enchants:   { kind: collection, itemType: text }
+      # 注意：不存 equippedBy。「被谁装备」靠反查 character.equipment.* == 本 item
+
+  # —— 地点 ——
+  location:
+    attrs:
+      name:    { kind: scalar, type: text }
+      control: { kind: scalar, type: ref(faction), desc: 当前控制方 }
+
+  # —— 阵营 / 王国（非智慧生物也是 subject）——
+  faction:
+    attrs:
+      name:     { kind: scalar, type: text }
+      treasury: { kind: scalar, type: int, desc: 国库 }
+      # 不存 members 列表（避免双向）。成员靠反查 character.faction == 本 faction
+```
+
+## 5. 用示例跑几条 mutation（验证 op + 逆操作 + reduce）
+
+```jsonc
+// 切面 X @ instant=...：艾莉娜受伤、捡到剑、装上、对师门改观
+{
+  "instant": "1234567890",
+  "title": "城北遭遇战",
+  "mutations": [
+    // scalar set，已结算存 old→new
+    { "subjectId": "erina", "attr": "hp",            "op": "set", "old": 80, "value": 50 },
+    // scalar add：也可写成相对增量（扣 30 血），逆 = add +30，不依赖 old
+    // { "subjectId": "erina", "attr": "hp",         "op": "add", "value": -30 },
+    // collection 加：捡到一把剑进背包
+    { "subjectId": "erina", "attr": "inventory",     "op": "collectionAdd", "value": "subject://sword-01" },
+    // object 细路径 set：把剑装到武器槽（逆只记 old weapon）
+    { "subjectId": "erina", "attr": "equipment.weapon", "op": "set", "old": null, "value": "subject://sword-01" },
+    // object 开放字典 by key：对「师门」的看法改了（逆记 old view）
+    { "subjectId": "erina", "attr": "memory.师门",   "op": "set", "old": "敬畏", "value": "怀疑" },
+    // list 追加：写一条经历（逆=砍末尾）
+    { "subjectId": "erina", "attr": "events",        "op": "listAppend", "value": "在城北被伏击，捡到一把旧剑" }
+  ]
+}
+```
+
+- **reduce(erina, t≥X)**：hp=50、inventory 含 `subject://sword-01`、equipment.weapon=`subject://sword-01`、memory.师门="怀疑"、events 末尾多一条。
+- **回退切面 X**：逐条反向 —— hp set 回 80、inventory 移除 sword-01、equipment.weapon set 回 null、memory.师门 set 回 "敬畏"、events 砍末尾。**已结算的 old 让回退 O(1)。**
+- **「这把 sword-01 被谁装备」**：反查所有 character 的 `equipment.*` 中等于 `subject://sword-01` 的 → erina。装备自己不存 equippedBy。
+- **「凤凰阵营有哪些成员」**：反查 character.faction == `subject://phoenix`。阵营不存 members。
+- **「erina 的 hp 曲线」**：取所有 subjectId=erina & attr=hp 的 mutation，按 instant 排 → (…,80→50,…) 时间序列。
+
+## 6. 存储 / 边界定论
+
+- **schema = 项目级配置文件**（YAML/JSON），放 Project Workspace 顶层 **`world-engine/`** 目录（如 `world-engine/schema.yaml`）。schema **不进 SQLite**。
+- **Project SQLite 只存切片（timeline）**。切片只是 op + 值，不内嵌 schema；改 schema 不影响已存切片。
+- **default 进切面**：subject 创建时生成一条**初始化切面**（在该 subject 起始 instant），把 schema 各属性的 `default` 作为一组 `set` mutation 写入。这样 reduce 从切面序列即可拿到初值，**切面序列自包含**，不需要「reduce 时回查 schema 兜底」的特殊逻辑。
+
+## 7. 与现有 simulation / RAG 的关系（边界，非本任务实现）
+
+- **与 `simulation/` 目录**：世界引擎是**全新独立系统，当前与 simulation 无关**。`simulation/` 目录及其 subject 文件（subject.md / soul.md / events.jsonl / memory.jsonl / mind.md / state.md）**暂不删除、暂不迁移**，后续再慢慢迁移。世界引擎的世界状态完全由切面 reduce 得来，不读写 simulation 文件。
+- **目标终态（后续，非现在）**：世界状态不再依赖 subject 文件，只有世界引擎 reduce 出来的状态。届时再设计 simulation → 世界引擎的迁移路径。
+- **RAG（先不深入设计，只定边界）**：RAG **单独成系统**，是世界引擎的**下游消费者**，不跟随 schema 定义。
+  - 理由：世界引擎 reduce 出的是结构化当前状态（hp=50、memory.师门="怀疑"）；RAG 要的是可语义检索的文本片段（events 流、memory view 文本）。两者数据形态、更新时机、索引方式不同，绑在一起会耦死。
+  - 接缝：世界引擎是事实源（切面 / reduce），RAG 单独定义「订阅哪些属性的变更并建索引」（如订阅 events list 追加、memory view 文本）。RAG 索引可重建（从切面 reduce + 重新 embed），切面才是真相。与现有「subject-rag.sqlite 是可重建缓存、JSONL 是真相」思路一致，只是真相源换成切面。
+  - 第一版不实现 RAG，但 kind 设计已天然支持后续订阅。
+
+## 8. 本文件遗留待定
+
+- subject 实例本身的注册/创建（subject 列表 / 身份存哪，与 schema 类型如何绑定；是否也用「初始化切面」承载身份元数据）。
+- `world-engine/` 内配置文件的最终命名与格式细节（schema.yaml 字段、calendar.yaml）。
+- 校验严格度细节：宽松允许未声明属性已定，但 ref 目标 type 不匹配时是 error 还是 warning 待定。

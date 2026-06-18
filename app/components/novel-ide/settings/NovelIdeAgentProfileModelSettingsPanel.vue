@@ -36,15 +36,6 @@ type AgentProfileModelDraft = {
     stream: boolean | null;
 };
 
-const reasoningEffortBaseOptions: SelectOption[] = [
-    {value: "off", label: "关闭"},
-    {value: "minimal", label: "极低"},
-    {value: "low", label: "低"},
-    {value: "medium", label: "中"},
-    {value: "high", label: "高"},
-    {value: "xhigh", label: "极高"},
-];
-
 const loading = ref(false);
 const saving = ref(false);
 const errorText = ref("");
@@ -60,8 +51,17 @@ const profileModelDefaults = ref<AgentProfileModelDraft>({
 const profiles = ref<AgentProfileDraft[]>([]);
 const snapshotText = ref("");
 const configApi = useConfigApi();
+const {t} = useI18n();
 const editorSnapshot = ref<ConfigEditorSnapshotDto | null>(null);
 const isProjectScope = computed(() => props.scope === "project");
+const reasoningEffortBaseOptions = computed<SelectOption[]>(() => [
+    {value: "off", label: t("settings.panels.profileModels.off")},
+    {value: "minimal", label: t("settings.panels.profileModels.minimal")},
+    {value: "low", label: t("settings.panels.profileModels.low")},
+    {value: "medium", label: t("settings.panels.profileModels.medium")},
+    {value: "high", label: t("settings.panels.profileModels.high")},
+    {value: "xhigh", label: t("settings.panels.profileModels.xhigh")},
+]);
 
 /**
  * 将数字配置转成表单文本。
@@ -89,17 +89,17 @@ function parseNullableNumber(value: string | number | null | undefined, integerO
 
 function thinkingLevelLabel(level: ThinkingLevelDto): string {
     switch (level) {
-        case "off": return "关闭";
-        case "minimal": return "极低";
-        case "low": return "低";
-        case "medium": return "中";
-        case "high": return "高";
-        case "xhigh": return "极高";
+        case "off": return t("settings.panels.profileModels.off");
+        case "minimal": return t("settings.panels.profileModels.minimal");
+        case "low": return t("settings.panels.profileModels.low");
+        case "medium": return t("settings.panels.profileModels.medium");
+        case "high": return t("settings.panels.profileModels.high");
+        case "xhigh": return t("settings.panels.profileModels.xhigh");
     }
 }
 
 function streamLabel(value: boolean): string {
-    return value ? "开启" : "关闭";
+    return value ? t("settings.panels.profileModels.enabled") : t("settings.panels.profileModels.disabled");
 }
 
 function streamSelectValue(value: boolean | null): string {
@@ -117,22 +117,22 @@ function parseStreamSelectValue(value: string): boolean | null {
 }
 
 function reasoningEffortDefaultLabel(profile: AgentProfileDraft): string {
-    return `默认（${thinkingLevelLabel(resolveProfileInheritedModel(profile).reasoningEffort ?? "off")}）`;
+    return t("settings.panels.profileModels.defaultValue", {value: thinkingLevelLabel(resolveProfileInheritedModel(profile).reasoningEffort ?? "off")});
 }
 
 function streamDefaultLabel(profile: AgentProfileDraft): string {
-    return `默认（${streamLabel(resolveProfileInheritedModel(profile).stream ?? true)}）`;
+    return t("settings.panels.profileModels.defaultValue", {value: streamLabel(resolveProfileInheritedModel(profile).stream ?? true)});
 }
 
 function reasoningEffortOptionsForProfile(profile: AgentProfileDraft): SelectOption[] {
-    return [{value: "inherit", label: reasoningEffortDefaultLabel(profile)}, ...reasoningEffortBaseOptions];
+    return [{value: "inherit", label: reasoningEffortDefaultLabel(profile)}, ...reasoningEffortBaseOptions.value];
 }
 
 function streamOptionsForProfile(profile: AgentProfileDraft): SelectOption[] {
     return [
         {value: "inherit", label: streamDefaultLabel(profile)},
-        {value: "true", label: "开启"},
-        {value: "false", label: "关闭"},
+        {value: "true", label: t("settings.panels.profileModels.enabled")},
+        {value: "false", label: t("settings.panels.profileModels.disabled")},
     ];
 }
 
@@ -327,7 +327,7 @@ async function loadSettings(): Promise<void> {
             applySettings(snapshot.agentProfileSettings);
         }
     } catch (error) {
-        errorText.value = error instanceof Error ? error.message : "读取 Agent Profile 模型设定失败";
+        errorText.value = error instanceof Error ? error.message : t("settings.panels.profileModels.loadFailed");
     } finally {
         loading.value = false;
     }
@@ -352,13 +352,13 @@ async function saveSettings(): Promise<void> {
         editorSnapshot.value = snapshot;
         if (isProjectScope.value) {
             applyProjectSettings(snapshot);
-            successText.value = "Agent Profile 模型覆盖已写入 Project Config。";
+            successText.value = t("settings.panels.profileModels.projectSaveSuccess");
         } else {
             applySettings(snapshot.agentProfileSettings);
-            successText.value = "Agent Profile 模型设定已写入 Global Config。";
+            successText.value = t("settings.panels.profileModels.globalSaveSuccess");
         }
     } catch (error) {
-        errorText.value = error instanceof Error ? error.message : "保存 Agent Profile 模型设定失败";
+        errorText.value = error instanceof Error ? error.message : t("settings.panels.profileModels.saveFailed");
     } finally {
         saving.value = false;
     }
@@ -426,35 +426,35 @@ function resolveProfileInheritedModel(profile: AgentProfileDraft): AgentProfileM
 
 function modelDefaultLabel(profile: AgentProfileDraft): string {
     const defaultKey = resolveProfileInheritedModel(profile).modelKey;
-    return defaultKey ? `默认（${defaultKey}）` : "默认（跟随全局默认模型）";
+    return defaultKey ? t("settings.panels.profileModels.defaultValue", {value: defaultKey}) : t("settings.panels.profileModels.defaultGlobalModel");
 }
 
 function defaultModelSelectLabel(): string {
     if (!isProjectScope.value) {
-        return "跟随全局默认模型";
+        return t("settings.panels.profileModels.followGlobalDefaultModel");
     }
     const inherited = globalProfileModelDefaults().modelKey;
-    return inherited ? `继承 Global（${inherited}）` : "继承 Global（跟随全局默认模型）";
+    return inherited ? t("settings.panels.profileModels.inheritGlobal", {value: inherited}) : t("settings.panels.profileModels.inheritGlobalDefaultModel");
 }
 
 function defaultReasoningOptions(): SelectOption[] {
     if (!isProjectScope.value) {
-        return reasoningEffortBaseOptions;
+        return reasoningEffortBaseOptions.value;
     }
-    return [{value: "inherit", label: `继承 Global（${thinkingLevelLabel(globalProfileModelDefaults().reasoningEffort ?? "off")}）`}, ...reasoningEffortBaseOptions];
+    return [{value: "inherit", label: t("settings.panels.profileModels.inheritGlobal", {value: thinkingLevelLabel(globalProfileModelDefaults().reasoningEffort ?? "off")})}, ...reasoningEffortBaseOptions.value];
 }
 
 function defaultStreamOptions(): SelectOption[] {
     if (!isProjectScope.value) {
         return [
-            {value: "true", label: "开启"},
-            {value: "false", label: "关闭"},
+            {value: "true", label: t("settings.panels.profileModels.enabled")},
+            {value: "false", label: t("settings.panels.profileModels.disabled")},
         ];
     }
     return [
-        {value: "inherit", label: `继承 Global（${streamLabel(globalProfileModelDefaults().stream ?? true)}）`},
-        {value: "true", label: "开启"},
-        {value: "false", label: "关闭"},
+        {value: "inherit", label: t("settings.panels.profileModels.inheritGlobal", {value: streamLabel(globalProfileModelDefaults().stream ?? true)})},
+        {value: "true", label: t("settings.panels.profileModels.enabled")},
+        {value: "false", label: t("settings.panels.profileModels.disabled")},
     ];
 }
 
@@ -483,8 +483,8 @@ defineExpose({
     <div class="space-y-4 pt-1">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="max-w-xl">
-                <h3 class="text-base font-semibold text-[var(--text-main)]">{{ isProjectScope ? "Project Agent Profile 模型覆盖" : "Agent Profile 模型" }}</h3>
-                <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ isProjectScope ? `只覆盖 ${props.targetLabel || "当前 Project"} 的 Profile 模型参数；留空表示回落 Global。` : "先设置所有 Profile 共同继承的默认参数，再按 Profile 做局部覆盖。session 级覆盖只影响当前 session 的后续新 run。" }}</p>
+                <h3 class="text-base font-semibold text-[var(--text-main)]">{{ isProjectScope ? t("settings.panels.profileModels.projectTitle") : t("settings.panels.profileModels.globalTitle") }}</h3>
+                <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ isProjectScope ? t("settings.panels.profileModels.projectDescription", {target: props.targetLabel || t("settings.panels.profileModels.currentProject")}) : t("settings.panels.profileModels.globalDescription") }}</p>
             </div>
         </div>
 
@@ -510,48 +510,48 @@ defineExpose({
 
         <div v-if="loading" class="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-panel)] shadow-sm">
             <span class="i-lucide-loader-2 h-8 w-8 animate-spin text-[var(--text-muted)]"></span>
-            <span class="text-sm text-[var(--text-secondary)]">正在读取 Agent Profile 模型设定...</span>
+            <span class="text-sm text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.loading") }}</span>
         </div>
 
         <div v-else class="space-y-5">
             <section class="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-panel)] p-5 shadow-sm">
                 <div class="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-color)] pb-4">
                     <div>
-                        <h4 class="text-sm font-semibold text-[var(--text-main)]">默认参数</h4>
-                        <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ isProjectScope ? "当前 Project 的 Profile 默认参数；留空继承 Global。" : "所有 Agent Profile 留空时都会继承这里的参数。" }}</p>
+                        <h4 class="text-sm font-semibold text-[var(--text-main)]">{{ t("settings.panels.profileModels.defaultParameters") }}</h4>
+                        <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ isProjectScope ? t("settings.panels.profileModels.projectDefaultDescription") : t("settings.panels.profileModels.globalDefaultDescription") }}</p>
                     </div>
                     <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel)] px-3 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" @click="resetProfileModelDefaults">
                         <span class="i-lucide-rotate-ccw h-3 w-3"></span>
-                        回到默认
+                        {{ t("settings.panels.profileModels.resetDefault") }}
                     </button>
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.5fr)]">
                     <div class="space-y-1.5">
-                        <label class="text-xs font-medium text-[var(--text-secondary)]">默认模型</label>
+                        <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.defaultModel") }}</label>
                         <NovelIdeModelSelect
                             :model-value="profileModelDefaults.modelKey"
                             :models="enabledModels"
                             allow-default
                             :default-label="defaultModelSelectLabel()"
-                            placeholder="选择默认模型"
+                            :placeholder="t('settings.panels.profileModels.selectDefaultModel')"
                             @update:model-value="profileModelDefaults.modelKey = $event"
                         />
                     </div>
                     <div class="space-y-1.5">
-                        <label class="text-xs font-medium text-[var(--text-secondary)]">温度</label>
-                        <FormInput v-model="profileModelDefaults.temperature" type="number" step="0.1" min="0" :placeholder="isProjectScope ? '继承 Global' : '留空'" />
+                        <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.temperature") }}</label>
+                        <FormInput v-model="profileModelDefaults.temperature" type="number" step="0.1" min="0" :placeholder="isProjectScope ? t('settings.panels.profileModels.inheritGlobalPlaceholder') : t('settings.panels.profileModels.emptyPlaceholder')" />
                     </div>
                     <div class="space-y-1.5">
                         <label class="text-xs font-medium text-[var(--text-secondary)]">TopK</label>
-                        <FormInput v-model="profileModelDefaults.topK" type="number" step="1" min="1" :placeholder="isProjectScope ? '继承 Global' : '留空'" />
+                        <FormInput v-model="profileModelDefaults.topK" type="number" step="1" min="1" :placeholder="isProjectScope ? t('settings.panels.profileModels.inheritGlobalPlaceholder') : t('settings.panels.profileModels.emptyPlaceholder')" />
                     </div>
                     <div class="space-y-1.5">
-                        <label class="text-xs font-medium text-[var(--text-secondary)]">推理强度</label>
+                        <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.reasoningEffort") }}</label>
                         <FormSelect :model-value="profileModelDefaults.reasoningEffort ?? 'inherit'" :options="defaultReasoningOptions()" @update:model-value="setDefaultReasoningEffort" />
                     </div>
                     <div class="space-y-1.5">
-                        <label class="text-xs font-medium text-[var(--text-secondary)]">流式</label>
+                        <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.stream") }}</label>
                         <FormSelect :model-value="streamSelectValue(profileModelDefaults.stream)" :options="defaultStreamOptions()" @update:model-value="setDefaultStream" />
                     </div>
                 </div>
@@ -560,7 +560,7 @@ defineExpose({
             <section class="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-panel)] p-5 shadow-sm">
                 <div class="mb-4 border-b border-[var(--border-color)] pb-4">
                     <h4 class="text-sm font-semibold text-[var(--text-main)]">Agent Profiles</h4>
-                    <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ isProjectScope ? "这些值写入所选 Project Workspace 的 .nbook/config.json。" : "只配置与默认参数不同的 Profile 覆盖。" }}</p>
+                    <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ isProjectScope ? t("settings.panels.profileModels.projectProfilesDescription") : t("settings.panels.profileModels.globalProfilesDescription") }}</p>
                 </div>
 
                 <div class="grid gap-3">
@@ -572,45 +572,45 @@ defineExpose({
                             </div>
                             <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color)] bg-[var(--bg-panel)] px-3 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" @click="resetProfile(profile)">
                                 <span class="i-lucide-rotate-ccw h-3 w-3"></span>
-                                回到默认
+                                {{ t("settings.panels.profileModels.resetDefault") }}
                             </button>
                         </div>
 
                         <div class="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_auto]">
                             <!-- Profile 默认模型 -->
                             <div class="space-y-1.5">
-                                <label class="text-xs font-medium text-[var(--text-secondary)]">默认模型</label>
+                                <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.defaultModel") }}</label>
                                 <NovelIdeModelSelect
                                     :model-value="profile.model.modelKey"
                                     :models="enabledModels"
                                     allow-default
                                     :default-label="modelDefaultLabel(profile)"
-                                    placeholder="选择默认模型"
+                                    :placeholder="t('settings.panels.profileModels.selectDefaultModel')"
                                     @update:model-value="profile.model.modelKey = $event"
                                 />
                             </div>
 
                             <!-- 温度 -->
                             <div class="space-y-1.5">
-                                <label class="text-xs font-medium text-[var(--text-secondary)]">温度</label>
-                                <FormInput v-model="profile.model.temperature" type="number" step="0.1" min="0" placeholder="默认" />
+                                <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.temperature") }}</label>
+                                <FormInput v-model="profile.model.temperature" type="number" step="0.1" min="0" :placeholder="t('settings.panels.profileModels.defaultPlaceholder')" />
                             </div>
 
                             <!-- TopK -->
                             <div class="space-y-1.5">
                                 <label class="text-xs font-medium text-[var(--text-secondary)]">TopK</label>
-                                <FormInput v-model="profile.model.topK" type="number" step="1" min="1" placeholder="默认" />
+                                <FormInput v-model="profile.model.topK" type="number" step="1" min="1" :placeholder="t('settings.panels.profileModels.defaultPlaceholder')" />
                             </div>
 
                             <!-- 推理强度 -->
                             <div class="space-y-1.5">
-                                <label class="text-xs font-medium text-[var(--text-secondary)]">推理强度</label>
+                                <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.reasoningEffort") }}</label>
                                 <FormSelect :model-value="profile.model.reasoningEffort ?? 'inherit'" :options="reasoningEffortOptionsForProfile(profile)" @update:model-value="setProfileReasoningEffort(profile, $event)" />
                             </div>
 
                             <!-- 流式 -->
                             <div class="space-y-1.5">
-                                <label class="text-xs font-medium text-[var(--text-secondary)]">流式</label>
+                                <label class="text-xs font-medium text-[var(--text-secondary)]">{{ t("settings.panels.profileModels.stream") }}</label>
                                 <FormSelect :model-value="streamSelectValue(profile.model.stream)" :options="streamOptionsForProfile(profile)" @update:model-value="setProfileStream(profile, $event)" />
                             </div>
                         </div>

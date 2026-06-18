@@ -14,7 +14,7 @@
 - `order` 使用两位数字，从 `01` 开始；active task 按 README 首次加入 git 的时间正序编号，缺少 git 记录时使用目录 LastWriteTime。
 - `name` 使用英文 kebab-case。
 - 每个任务目录至少包含 `README.md`。
-- 需要额外资料时，可以在任务目录内添加 `notes.md`、`references.md` 或截图资源。
+- 并不一定强制都把任务塞到 README.md 里，还可以在任务目录类放其他和任务有关的文档等资料，例如 notes.md, references.md
 
 ## 归档
 

@@ -14,6 +14,7 @@ import type {PiBuiltinCatalogDto} from "nbook/shared/dto/app-settings.dto";
  */
 export function useConfigApi() {
     const novelIdeStore = useNovelIdeStore();
+    const {t} = useI18n();
 
     /**
      * Workspace Root 配置查询参数。Global Config 写入时也带上当前目标，
@@ -54,7 +55,7 @@ export function useConfigApi() {
      */
     function projectQuery(): ConfigWorkspaceQueryDto {
         if (novelIdeStore.workspaceKind === "user-assets" || !novelIdeStore.currentNovelId) {
-            throw new Error("当前没有可写入的 Project Workspace 配置");
+            throw new Error(t("composables.config.noWritableProjectWorkspace"));
         }
         return novelProjectQuery(novelIdeStore.currentNovelId);
     }

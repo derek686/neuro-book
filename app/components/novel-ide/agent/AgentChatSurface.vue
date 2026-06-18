@@ -104,6 +104,7 @@ const runPhase = session.runPhase;
 const pendingUserInputSession = session.pendingUserInputSession;
 const {confirm} = useDialog();
 const notification = useNotification();
+const {t} = useI18n();
 
 const ideStore = useNovelIdeStore();
 const {
@@ -148,25 +149,24 @@ const linkedAgentCount = computed(() => linkedAgents.value.length + linkedByAgen
 const planModeActive = computed(() => activeSnapshot.value?.planModeActive ?? false);
 const renderNodes = computed(() => messages.value);
 const inlineEditPreview = computed(() => {
+    if (activeSummary.value?.profileKey !== INLINE_EDITOR_PROFILE_KEY) {
+        return "";
+    }
     const toolCall = messages.value
         .flatMap((message) => message.toolCalls ?? [])
-        .filter((item) => item.name === "edit" || item.name === "write")
+        .filter((item) => (item.name === "edit" || item.name === "write") && (item.status === "streaming" || item.status === "running"))
         .at(-1);
     if (!toolCall) {
         return "";
     }
     const path = readToolPath(toolCall);
-    const status = toolCall.status === "success"
-        ? "已完成"
-        : toolCall.status === "error"
-            ? "失败"
-            : "进行中";
+    const status = t("agent.chatSurface.inlineRunning");
     const result = toolCall.error || toolCall.result || "";
     return [`${status}${path ? `：${path}` : ""}`, result].filter(Boolean).join("\n");
 });
 const inlineEditorSessionLabel = computed(() => {
     if (activeSummary.value?.profileKey !== INLINE_EDITOR_PROFILE_KEY) {
-        return "自动 Inline AI Session";
+        return t("agent.chatSurface.inlineSessionLabel");
     }
     return activeSummary.value.title || `Inline AI #${String(activeSummary.value.sessionId)}`;
 });
@@ -181,25 +181,25 @@ const canContinueWithoutInput = computed(() => {
 });
 const connectionStatusLabel = computed(() => {
     switch (connectionStatus.value) {
-        case "connecting": return "连接中";
-        case "reconnecting": return "事件连接断开，正在重连";
-        case "recovering": return "正在恢复历史";
-        case "disconnected": return "事件连接已断开";
+        case "connecting": return t("agent.chatSurface.connecting");
+        case "reconnecting": return t("agent.chatSurface.reconnecting");
+        case "recovering": return t("agent.chatSurface.recovering");
+        case "disconnected": return t("agent.chatSurface.disconnected");
         default: return "";
     }
 });
 const connectionNeedsAction = computed(() => connectionStatus.value === "disconnected" || sessionStream.reconnectAttempt.value > 3);
 const runPhaseLabel = computed(() => {
     switch (runPhase.value) {
-        case "model_pending": return "等待模型响应";
-        case "thinking": return "思考中";
-        case "assistant_streaming": return "生成回复中";
-        case "tool_args_streaming": return "生成工具参数";
-        case "tool_running": return "执行工具中";
-        case "tool_streaming": return "读取工具输出";
-        case "waiting_user": return "等待用户确认";
-        case "finishing": return "工具已完成，正在继续生成";
-        default: return "运行中";
+        case "model_pending": return t("agent.chatSurface.phaseModelPending");
+        case "thinking": return t("agent.chatSurface.phaseThinking");
+        case "assistant_streaming": return t("agent.chatSurface.phaseAssistantStreaming");
+        case "tool_args_streaming": return t("agent.chatSurface.phaseToolArgsStreaming");
+        case "tool_running": return t("agent.chatSurface.phaseToolRunning");
+        case "tool_streaming": return t("agent.chatSurface.phaseToolStreaming");
+        case "waiting_user": return t("agent.chatSurface.phaseWaitingUser");
+        case "finishing": return t("agent.chatSurface.phaseFinishing");
+        default: return t("agent.chatSurface.phaseRunning");
     }
 });
 
@@ -216,15 +216,15 @@ const createProfileOptions = computed<LeaderCreateProfileOption[]>(() => {
     const options: LeaderCreateProfileOption[] = [
         {
             profileKey: defaultKey,
-            label: defaultKey === systemLeaderProfileKey.value ? profileDisplayName(defaultKey) : `默认：${profileDisplayName(defaultKey)}`,
+            label: defaultKey === systemLeaderProfileKey.value ? profileDisplayName(defaultKey) : t("agent.profiles.defaultPrefix", {name: profileDisplayName(defaultKey)}),
             iconClass: profileIconClass(defaultKey),
         },
     ];
     if (ideStore.workspaceKind !== "user-assets") {
         options.push(
-            {profileKey: "leader.default", label: "主创", iconClass: profileIconClass("leader.default")},
-            {profileKey: "rp.leader", label: "跑团主持", iconClass: profileIconClass("rp.leader")},
-            {profileKey: "simulator.leader", label: "世界模拟", iconClass: profileIconClass("simulator.leader")},
+            {profileKey: "leader.default", label: profileDisplayName("leader.default"), iconClass: profileIconClass("leader.default")},
+            {profileKey: "rp.leader", label: profileDisplayName("rp.leader"), iconClass: profileIconClass("rp.leader")},
+            {profileKey: "simulator.leader", label: profileDisplayName("simulator.leader"), iconClass: profileIconClass("simulator.leader")},
         );
     }
     const seen = new Set<string>();
@@ -322,10 +322,10 @@ function pendingUserInputKey(session: typeof pendingUserInputSession.value): str
  */
 function profileDisplayName(profileKey: string): string {
     switch (profileKey) {
-        case "leader.assets": return "用户资产助手";
-        case "rp.leader": return "跑团主持";
-        case "simulator.leader": return "世界模拟";
-        case "leader.default": return "主创";
+        case "leader.assets": return t("agent.profiles.leaderAssets");
+        case "rp.leader": return t("agent.profiles.rpLeader");
+        case "simulator.leader": return t("agent.profiles.simulatorLeader");
+        case "leader.default": return t("agent.profiles.leaderDefault");
         default: return profileKey;
     }
 }
@@ -357,8 +357,8 @@ watch(() => pendingUserInputSession.value?.assistantMessageId ?? null, () => {
 }, {immediate: true});
 
 const activeDrawerTitle = computed(() => profileDisplayName(activeSummary.value?.profileKey ?? leaderProfileKey.value));
-const activeSessionTitle = computed(() => activeSummary.value?.title || (activeSessionId.value ? `Session #${String(activeSessionId.value)}` : "未命名对话"));
-const activeSessionSummaryText = computed(() => activeSummary.value?.summary?.trim() || activeSummary.value?.lastMessagePreview?.trim() || "暂无消息");
+const activeSessionTitle = computed(() => activeSummary.value?.title || (activeSessionId.value ? `Session #${String(activeSessionId.value)}` : t("agent.session.unnamed")));
+const activeSessionSummaryText = computed(() => activeSummary.value?.summary?.trim() || activeSummary.value?.lastMessagePreview?.trim() || t("agent.session.noRecentMessages"));
 const summarizerStatus = computed<null | {
     label: string;
     icon: string;
@@ -372,25 +372,25 @@ const summarizerStatus = computed<null | {
     }
     if (state.running && state.dirty) {
         return {
-            label: "摘要排队",
+            label: t("agent.chatSurface.summaryQueued"),
             icon: "i-lucide-refresh-cw",
             className: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-            title: "后台摘要正在运行；当前摘要完成后会按最新会话重新摘要。",
+            title: t("agent.chatSurface.summaryQueuedTitle"),
             spinning: true,
         };
     }
     if (state.running) {
         return {
-            label: "摘要中",
+            label: t("agent.chatSurface.summarizing"),
             icon: "i-lucide-loader-circle",
             className: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-            title: "后台正在更新当前会话标题和摘要。",
+            title: t("agent.chatSurface.summarizingTitle"),
             spinning: true,
         };
     }
     if (state.lastError) {
         return {
-            label: "摘要失败",
+            label: t("agent.chatSurface.summaryFailed"),
             icon: "i-lucide-triangle-alert",
             className: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
             title: state.lastError,
@@ -399,18 +399,18 @@ const summarizerStatus = computed<null | {
     }
     return null;
 });
-const sessionModelDefaultLabel = computed(() => "跟随 Profile 默认");
+const sessionModelDefaultLabel = computed(() => t("agent.chatSurface.followProfileDefault"));
 const sessionModelSelectionValue = computed(() => sessionModelMode.value === "override" ? sessionModelDraft.value.modelKey : null);
 const sessionThinkingResolvedLabel = computed(() => {
     const requested = activeSnapshot.value?.thinkingLevel ?? null;
     const effective = activeSnapshot.value?.effectiveThinkingLevel ?? "off";
     if (requested === null) {
-        return `跟随 Profile（当前 ${thinkingLevelLabel(effective)}）`;
+        return t("agent.chatSurface.followProfileCurrent", {level: thinkingLevelLabel(effective)});
     }
     if (requested === effective) {
         return thinkingLevelLabel(effective);
     }
-    return `${thinkingLevelLabel(requested)}（实际 ${thinkingLevelLabel(effective)}）`;
+    return t("agent.chatSurface.requestedEffective", {requested: thinkingLevelLabel(requested), effective: thinkingLevelLabel(effective)});
 });
 const drawerIconClass = computed(() => "i-lucide-sparkles text-[var(--accent-text)]");
 
@@ -427,12 +427,12 @@ const contextUsageCompactLabel = computed(() => {
 const contextUsageExactLabel = computed(() => {
     const usage = activeSnapshot.value?.contextUsage;
     if (!usage) {
-        return "Context 估算 - / -";
+        return t("agent.chatSurface.contextUnknown");
     }
     const percent = typeof usage.percent === "number" && Number.isFinite(usage.percent)
         ? `（${formatPercent(usage.percent)}）`
         : "";
-    return `Context 估算 ${formatTokenCount(usage.usedTokens)} / ${formatTokenCount(usage.limitTokens)} tokens${percent}`;
+    return t("agent.chatSurface.contextEstimate", {used: formatTokenCount(usage.usedTokens), limit: formatTokenCount(usage.limitTokens), percent});
 });
 const contextPercentCompactLabel = computed(() => {
     const percent = activeSnapshot.value?.contextUsage?.percent;
@@ -451,18 +451,33 @@ const costExchangeRateSuffix = computed(() => {
     if (!usingCnyRate(costDisplayOptions.value)) {
         return "";
     }
-    return costDisplay.exchangeRateStale.value ? "，按缓存 USD/CNY 汇率换算" : "，按当前 USD/CNY 汇率换算";
+    return costDisplay.exchangeRateStale.value ? t("agent.chatSurface.cachedRateSuffix") : t("agent.chatSurface.currentRateSuffix");
 });
 const cumulativeCostCompactLabel = computed(() => formatCost(activeSummary.value?.usage?.cost.total, costDisplayOptions.value));
 const cumulativeUsageExactLabel = computed(() => {
     const usage = activeSummary.value?.usage;
     if (!usage) {
-        return "Session 总消耗：输入 -- / 输出 -- / 缓存读 -- / 缓存写 -- / 命中率 --";
+        return t("agent.chatSurface.totalUsageEmpty");
     }
     const costLabel = formatCost(usage.cost.total, costDisplayOptions.value)
-        ? ` / Session 耗费 ${formatCost(usage.cost.total, costDisplayOptions.value)}（输入 ${formatCostExact(usage.cost.input, costDisplayOptions.value)} / 输出 ${formatCostExact(usage.cost.output, costDisplayOptions.value)} / 缓存读 ${formatCostExact(usage.cost.cacheRead, costDisplayOptions.value)} / 缓存写 ${formatCostExact(usage.cost.cacheWrite, costDisplayOptions.value)} / 总计 ${formatCostExact(usage.cost.total, costDisplayOptions.value)}${costExchangeRateSuffix.value}）`
+        ? t("agent.chatSurface.totalUsageWithCost", {
+            compactCost: formatCost(usage.cost.total, costDisplayOptions.value),
+            inputCost: formatCostExact(usage.cost.input, costDisplayOptions.value),
+            outputCost: formatCostExact(usage.cost.output, costDisplayOptions.value),
+            cacheReadCost: formatCostExact(usage.cost.cacheRead, costDisplayOptions.value),
+            cacheWriteCost: formatCostExact(usage.cost.cacheWrite, costDisplayOptions.value),
+            totalCost: formatCostExact(usage.cost.total, costDisplayOptions.value),
+            suffix: costExchangeRateSuffix.value,
+        })
         : "";
-    return `Session 总消耗：输入 ${formatTokenCount(usage.input)} / 输出 ${formatTokenCount(usage.output)} / 缓存读 ${formatTokenCount(usage.cacheRead)} / 缓存写 ${formatTokenCount(usage.cacheWrite)} / 缓存命中率 ${formatCacheHitRate(usage)}${costLabel}`;
+    return t("agent.chatSurface.totalUsage", {
+        input: formatTokenCount(usage.input),
+        output: formatTokenCount(usage.output),
+        cacheRead: formatTokenCount(usage.cacheRead),
+        cacheWrite: formatTokenCount(usage.cacheWrite),
+        hitRate: formatCacheHitRate(usage),
+        cost: costLabel,
+    });
 });
 
 /**
@@ -516,12 +531,12 @@ function formatCacheHitRate(usage: {input: number; cacheRead: number}): string {
  */
 function thinkingLevelLabel(level: ThinkingLevelDto): string {
     switch (level) {
-        case "off": return "关闭";
-        case "minimal": return "极低";
-        case "low": return "低";
-        case "medium": return "中";
-        case "high": return "高";
-        case "xhigh": return "极高";
+        case "off": return t("agent.composer.off");
+        case "minimal": return t("agent.composer.minimal");
+        case "low": return t("agent.composer.low");
+        case "medium": return t("agent.composer.medium");
+        case "high": return t("agent.composer.high");
+        case "xhigh": return t("agent.composer.xhigh");
     }
 }
 
@@ -622,7 +637,7 @@ const refreshSessionsWithQuery = async (query: AgentSessionListQueryDto = {}): P
         return sessions.value;
     } catch (error) {
         console.error("刷新 session 列表失败", error);
-        notifyAgentError(error, "刷新 session 列表失败");
+        notifyAgentError(error, t("agent.chatSurface.loadSessionsFailed"));
         throw error;
     }
 };
@@ -709,7 +724,7 @@ const loadSession = async (sessionId: number): Promise<void> => {
         scrollToBottom();
     } catch (error) {
         console.error(`加载 session ${String(sessionId)} 失败`, error);
-        notifyAgentError(error, "加载 Agent session 失败");
+        notifyAgentError(error, t("agent.chatSurface.loadSessionFailed"));
     }
 };
 
@@ -746,7 +761,7 @@ const refreshLinkedAgentRelations = async (): Promise<void> => {
             return;
         }
         console.error(`刷新 session ${String(targetSessionId)} 关联 Agent 失败`, error);
-        notifyAgentError(error, "刷新关联 Agent 失败");
+        notifyAgentError(error, t("agent.chatSurface.refreshLinkedFailed"));
     } finally {
         if (requestId === linkedAgentRelationsRequestId) {
             linkedAgentsLoading.value = false;
@@ -798,7 +813,7 @@ const handleInvokeResult = async (result: InvokeAgentResult): Promise<void> => {
     }
     await syncActiveSessionSnapshot("invoke_error_fallback");
     if (!hasVisibleInvocationError(messages.value, result.invocationId)) {
-        notification.error(result.error ?? "Agent 运行失败", {title: "Agent 运行失败"});
+        notification.error(result.error ?? t("agent.chatSurface.runFailed"), {title: t("agent.chatSurface.runFailed")});
     }
 };
 
@@ -861,7 +876,7 @@ const reconnectActiveSessionEvents = async (): Promise<void> => {
         await sessionStream.reconnectNow();
     } catch (error) {
         console.error("重新连接 Agent 事件流失败", error);
-        notifyAgentError(error, "重新连接 Agent 事件流失败");
+        notifyAgentError(error, t("agent.chatSurface.reconnectFailed"));
     }
 };
 
@@ -904,7 +919,7 @@ const submitUserInputAnswers = async (payload: {
             return {
                 questionIndex,
                 text: answer.ignored
-                    ? "用户选择终止本轮。"
+                    ? t("agent.chatSurface.userTerminated")
                     : formatAnswerText(question.options, answer.selectedOptionIndex, answer.selectedOptionIndexes, answer.note),
                 selectedOptionIndex: answer.selectedOptionIndex,
                 selectedOptionIndexes: answer.selectedOptionIndexes,
@@ -940,7 +955,7 @@ const submitUserInputAnswers = async (payload: {
         }
         console.error("提交问题答案失败", error);
         await syncActiveSessionSnapshot();
-        notifyAgentError(error, "提交问题答案失败");
+        notifyAgentError(error, t("agent.chatSurface.submitAnswersFailed"));
         throw error;
     } finally {
         if (submittingUserInputKey.value === pendingKey) {
@@ -1012,7 +1027,7 @@ const togglePlanMode = async (): Promise<void> => {
         await applySnapshotOrSync(result.snapshot);
     } catch (error) {
         console.error("切换 Plan Mode 失败", error);
-        notifyAgentError(error, "切换 Plan Mode 失败");
+        notifyAgentError(error, t("agent.chatSurface.togglePlanFailed"));
     }
 };
 
@@ -1025,7 +1040,7 @@ const send = async (): Promise<void> => {
         return;
     }
     if (!activeSessionId.value) {
-        notification.info("请先新建或选择一个 Agent session", {title: "没有可用 session"});
+        notification.info(t("agent.chatSurface.noSessionMessage"), {title: t("agent.chatSurface.noSessionTitle")});
         sessionDialogOpen.value = true;
         return;
     }
@@ -1065,14 +1080,14 @@ const send = async (): Promise<void> => {
 const sendInlineEditorPrompt = async (payload: InlineEditPayload, visibleMessage: string): Promise<void> => {
     const targetSession = await ensureInlineEditorSession();
     if (targetSession.status === "running" || targetSession.status === "waiting") {
-        throw new Error("Inline AI Session 正在运行或等待输入，请先处理当前任务。");
+        throw new Error(t("agent.chatSurface.inlineRunningError"));
     }
 
     if (activeSessionId.value !== targetSession.sessionId) {
         await loadSession(targetSession.sessionId);
     }
     if (!activeSessionId.value) {
-        throw new Error("Inline AI Session 加载失败。");
+        throw new Error(t("agent.chatSurface.inlineLoadFailed"));
     }
 
     session.appendOptimisticUserMessage(visibleMessage);
@@ -1115,10 +1130,10 @@ const steer = async (): Promise<void> => {
         });
         await handleInvokeResult(result);
         resetInput();
-        notification.success("消息已引导");
+        notification.success(t("agent.chatSurface.steered"));
     } catch (error) {
         console.error("引导消息失败", error);
-        notifyAgentError(error, "引导消息失败");
+        notifyAgentError(error, t("agent.chatSurface.steerFailed"));
     }
 };
 
@@ -1140,10 +1155,10 @@ const followup = async (): Promise<void> => {
         });
         await handleInvokeResult(result);
         resetInput();
-        notification.success("消息已排队");
+        notification.success(t("agent.chatSurface.queued"));
     } catch (error) {
         console.error("排队消息失败", error);
-        notifyAgentError(error, "排队消息失败");
+        notifyAgentError(error, t("agent.chatSurface.queueFailed"));
     }
 };
 
@@ -1201,7 +1216,7 @@ const compactSession = async (instructions?: string): Promise<void> => {
         await applySnapshotOrSync(result.snapshot);
     } catch (error) {
         console.error("压缩 Session 失败", error);
-        notifyAgentError(error, "压缩 Session 失败");
+        notifyAgentError(error, t("agent.chatSurface.compactFailed"));
     }
 };
 
@@ -1220,7 +1235,7 @@ const copyMessage = async (message: AgentMessage): Promise<void> => {
         return;
     }
     await navigator.clipboard.writeText(message.content);
-    notification.success("消息已复制");
+    notification.success(t("agent.chatSurface.copied"));
 };
 
 /**
@@ -1234,7 +1249,7 @@ const copyToolCall = async (toolCall: AgentToolCall): Promise<void> => {
         return;
     }
     await navigator.clipboard.writeText(text);
-    notification.success("工具结果已复制");
+    notification.success(t("agent.chatSurface.toolCopied"));
 };
 
 const startEditingMessage = (message: AgentMessage): void => {
@@ -1270,7 +1285,7 @@ const updateSessionModelSelection = async (modelKey: string | null): Promise<voi
         await applySnapshotOrSync(result.snapshot);
     } catch (error) {
         console.error("更新 session 模型失败", error);
-        notifyAgentError(error, "更新 session 模型失败");
+        notifyAgentError(error, t("agent.chatSurface.updateModelFailed"));
     } finally {
         sessionModelSaving.value = false;
     }
@@ -1297,7 +1312,7 @@ const updateSessionThinkingLevel = async (thinkingLevel: ThinkingLevelDto | null
         await applySnapshotOrSync(result.snapshot);
     } catch (error) {
         console.error("更新 session 推理强度失败", error);
-        notifyAgentError(error, "更新 session 推理强度失败");
+        notifyAgentError(error, t("agent.chatSurface.updateThinkingFailed"));
     } finally {
         sessionModelSaving.value = false;
     }
@@ -1374,7 +1389,7 @@ const cycleMessageBranch = async (messageId: string, direction: -1 | 1): Promise
         await applySnapshotOrSync(result.snapshot);
     } catch (error) {
         console.error("切换消息分支失败", error);
-        notifyAgentError(error, "切换消息分支失败");
+        notifyAgentError(error, t("agent.chatSurface.switchBranchFailed"));
     } finally {
         messageActionId.value = null;
     }
@@ -1393,7 +1408,7 @@ const selectTreeNode = async (entryId: string): Promise<void> => {
         await applySnapshotOrSync(result.snapshot);
     } catch (error) {
         console.error("切换 Session Tree 节点失败", error);
-        notifyAgentError(error, "切换 Session Tree 节点失败");
+        notifyAgentError(error, t("agent.chatSurface.switchTreeFailed"));
     } finally {
         messageActionId.value = null;
     }
@@ -1421,10 +1436,10 @@ const saveEditedMessage = async (payload: {message: AgentMessage; content: strin
         }
         editingMessageId.value = null;
         await syncActiveSessionSnapshot();
-        notification.success("消息已更新");
+        notification.success(t("agent.chatSurface.messageUpdated"));
     } catch (error) {
         console.error("改写消息失败", error);
-        notifyAgentError(error, "改写消息失败");
+        notifyAgentError(error, t("agent.chatSurface.rewriteFailed"));
     } finally {
         messageActionId.value = null;
     }
@@ -1453,7 +1468,7 @@ const refreshMessage = async (message: AgentMessage): Promise<void> => {
         await syncActiveSessionSnapshot();
     } catch (error) {
         console.error("刷新消息失败", error);
-        notifyAgentError(error, "刷新消息失败");
+        notifyAgentError(error, t("agent.chatSurface.refreshMessageFailed"));
     } finally {
         messageActionId.value = null;
     }
@@ -1463,7 +1478,7 @@ const rollbackMessage = async (message: AgentMessage): Promise<void> => {
     if (!activeSessionId.value || messageActionId.value || running.value) {
         return;
     }
-    const confirmed = await confirm("确定要回退到这条消息吗？", "回退消息");
+    const confirmed = await confirm(t("agent.chatSurface.rollbackConfirm"), t("agent.chatSurface.rollbackTitle"));
     if (!confirmed) {
         return;
     }
@@ -1475,10 +1490,10 @@ const rollbackMessage = async (message: AgentMessage): Promise<void> => {
         });
         await applySnapshotOrSync(result.snapshot);
         editingMessageId.value = null;
-        notification.success("消息已回退");
+        notification.success(t("agent.chatSurface.rollbackSuccess"));
     } catch (error) {
         console.error("回退消息失败", error);
-        notifyAgentError(error, "回退消息失败");
+        notifyAgentError(error, t("agent.chatSurface.rollbackFailed"));
     } finally {
         messageActionId.value = null;
     }
@@ -1757,12 +1772,12 @@ function formatAnswerText(
     note?: string,
 ): string {
     const indexes = selectedOptionIndexes?.length ? selectedOptionIndexes : selectedOptionIndex === undefined ? [] : [selectedOptionIndex];
-    const labels = indexes.map((index) => index === -1 ? "其他答案" : options[index]?.label ?? String(index));
-    const selectedText = labels.join("、");
+    const labels = indexes.map((index) => index === -1 ? t("agent.userInput.otherAnswer") : options[index]?.label ?? String(index));
+    const selectedText = labels.join(t("agent.planApproval.separator"));
     if (selectedText && note?.trim()) {
-        return `${selectedText}\n备注：${note.trim()}`;
+        return `${selectedText}\n${t("agent.planApproval.note", {note: note.trim()})}`;
     }
-    return note?.trim() || selectedText || "继续";
+    return note?.trim() || selectedText || t("agent.userInput.continue");
 }
 
 function isApprovalApproved(answer?: {
@@ -1809,21 +1824,21 @@ function isApprovalApproved(answer?: {
                 </div>
                 <div class="flex shrink-0 items-center gap-1">
                     <Dropdown v-if="canChooseCreateProfile" :items="createProfileDropdownItems" root-class="relative inline-block" menu-class="right-0 top-full mt-1.5 w-44" compact @select="void createSessionFromHeader($event)">
-                        <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40" title="新建对话" :disabled="loadingSession">
+                        <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40" :title="t('agent.session.newChat')" :disabled="loadingSession">
                             <span class="i-lucide-plus h-4 w-4"></span>
                         </button>
                     </Dropdown>
-                    <button v-else class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40" title="新建对话" :disabled="loadingSession" @click="void createSessionFromHeader()">
+                    <button v-else class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40" :title="t('agent.session.newChat')" :disabled="loadingSession" @click="void createSessionFromHeader()">
                         <span class="i-lucide-plus h-4 w-4"></span>
                     </button>
-                    <button class="flex items-center gap-1.5 rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" :class="{'bg-[var(--bg-hover)] text-[var(--accent-main)]': linkedAgentPanelOpen}" title="关联 Agent" @click="linkedAgentPanelOpen = !linkedAgentPanelOpen">
+                    <button class="flex items-center gap-1.5 rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" :class="{'bg-[var(--bg-hover)] text-[var(--accent-main)]': linkedAgentPanelOpen}" :title="t('agent.chatSurface.linkedAgentsTitle')" @click="linkedAgentPanelOpen = !linkedAgentPanelOpen">
                         <span class="i-lucide-users h-4 w-4"></span>
                         <span v-if="linkedAgentCount" class="rounded-sm bg-[var(--accent-main)] px-1 text-[9px] font-bold text-white">{{ linkedAgentCount }}</span>
                     </button>
-                    <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40" title="Session Tree" :disabled="!activeSessionId" @click="sessionTreeDialogOpen = true">
+                    <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40" :title="t('agent.chatSurface.sessionTreeTitle')" :disabled="!activeSessionId" @click="sessionTreeDialogOpen = true">
                         <span class="i-lucide-git-branch h-4 w-4"></span>
                     </button>
-                    <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" title="Session 列表" @click="void openSessionDialog()">
+                    <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" :title="t('agent.chatSurface.sessionListTitle')" @click="void openSessionDialog()">
                         <span class="i-lucide-messages-square h-4 w-4"></span>
                     </button>
                     <button class="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" @click="emit('close')">

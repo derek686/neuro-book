@@ -129,6 +129,13 @@ describe("plain-reference-text", () => {
         expect(serializePlainReferenceDoc(doc)).toBe("处理 [[manuscript/001/chapter.md#L12-L18]] 和 [[src/server.ts#L45-L67]]");
     });
 
+    it("不会把 issue 编号或 URL fragment 误识别成 selection chip", () => {
+        const text = "see issue#123 and https://example.com/a#45";
+
+        expect(tokenizePlainReferenceText(text)).toEqual([{kind: "text", raw: text}]);
+        expect(serializePlainReferenceDoc(parsePlainReferenceText(text))).toBe(text);
+    });
+
     it("不会把 XML/template 内的变量误识别为 skill", () => {
         const text = `<custom-tag value="\${schema}">abc$draft</custom-tag>`;
 

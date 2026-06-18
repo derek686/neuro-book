@@ -26,6 +26,7 @@ const emit = defineEmits<{
     (e: "focus", event: FocusEvent): void;
 }>();
 
+const {t} = useI18n();
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);
 const panelRef = ref<HTMLDivElement | null>(null);
@@ -76,7 +77,7 @@ const selectOption = (opt: SelectOption) => {
                         <span class="truncate">{{ opt.label }}</span>
                     </template>
                 </template>
-                <span v-if="!options.some(o => o.value === modelValue)" class="text-[var(--text-muted)] opacity-80">{{ placeholder || '选择项' }}</span>
+                <span v-if="!options.some(o => o.value === modelValue)" class="text-[var(--text-muted)] opacity-80">{{ placeholder || t("common.selectOption") }}</span>
             </span>
             <span class="i-lucide-chevron-down h-3.5 w-3.5 text-[var(--text-muted)] shrink-0 transition-transform duration-200" :class="open ? '-rotate-180 text-[var(--text-main)]' : ''"></span>
         </div>

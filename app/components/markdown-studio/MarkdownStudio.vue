@@ -39,6 +39,7 @@ const props = withDefaults(defineProps<{
 
 const sourceEditorRef = ref<MarkdownStudioEditorHandle | null>(null);
 const previewEditorRef = ref<MarkdownStudioEditorHandle | null>(null);
+const {t} = useI18n();
 const { onPreviewChange, onSourceChange } = useMarkdownStudioSync({
     controller: props.controller,
     sourceEditorRef,
@@ -101,7 +102,7 @@ function handleSourceBlur(): void {
                 <template #fallback>
                     <div class="flex min-h-[65vh] items-center justify-center text-[var(--text-muted)]">
                         <span class="i-lucide-loader-2 mr-2 h-6 w-6 animate-spin"></span>
-                        <span>加载富文本引擎...</span>
+                        <span>{{ t("markdownStudio.workbench.loadingRichEngine") }}</span>
                     </div>
                 </template>
             </ClientOnly>

@@ -59,7 +59,7 @@
 - 任务选择放在 Prompt Bar 内部，用带图标的下拉菜单承载“改写、润色、扩写、缩写、续写、承接”。
 - 用户可能输入较多要求，所以不做临时 popover 输入框；Prompt Bar textarea 是主要输入面。
 - Prompt Bar 显示当前绑定 session，并提供绑定 / 切换入口。
-- Prompt Bar 的模型切换直接操作当前绑定 inline session 的模型 override；如果还没有绑定 session，则先保存 inline 模型草稿，自动创建 session 后立即应用。
+- Prompt Bar v1 的模型切换入口复用 Agent 面板现有 session 模型控制；Prompt Bar 内原地模型选择是后续增强。
 - Prompt Bar 显示当前选区引用卡片，包含文件名、行号状态、选区摘要和清除引用入口。
 - edit 工具流式适配以“修改预览条 / diff 摘要 / 当前编辑片段”形式显示在输入框上方，不把大段工具流塞进按钮状态。
 - Prompt Bar 的启用范围绑定当前 active editor：Markdown / 纯文本可编辑文件启用；欢迎页、不可编辑节点和非文本文件禁用或不渲染。
@@ -90,6 +90,7 @@
 - 2026-06-17：用户确认第二批关键 UX / 协议决策：聊天里不展示选区正文；允许多个选区引用；发送成功后清空 Prompt Bar；复用 `ReferencePlainTextEditor` 作为输入面并新增 selection chip；`AgentTextBubble` Markdown 渲染也支持该 chip；绑定 session 仅限 `inline.editor`；无选区时由 AI 自行判断修改范围。
 - 2026-06-18：只读调研现有代码后确认实现路径：保留并重构 `NovelPromptBar`，删除旧 `/api/writing/continue` 调用链；TipTap 富文本选区使用现有 `selectedClipboardText()` 作为 selection payload 正文来源；Prompt Bar 长输入复用 `ReferencePlainTextEditor`；Agent 调用复用 `AgentChatSurface` 的 session/invoke 能力和现有 `input -> payload` 映射，不新增业务 API；新增 `inline.editor` profile 使用现有 `read` / `edit` / `write` / `report_result` 工具。
 - 2026-06-18：完成第一版实现。新增 `app/utils/inline-editor-selection.ts`；扩展 `ReferencePlainTextEditor` plain token/node、reference chip 视觉和 Agent Markdown 渲染，使 `[[path#Lx-Ly]]` selection chip 可解析、序列化和展示；TipTap selection menu 的 `Improve` 改为“加入 AI 引用”，事件链贯通到首页；`NovelPromptBar` 重构为 Inline AI Prompt Bar，支持任务下拉、多个选区 chip、长输入、session/model 入口和 edit/write 工具预览；`AgentChatSurface` 暴露 `openInlineEditorSession()`、`sendInlineEditorPrompt()` 和 `inlineEditPreview`，自动创建 / 复用 `inline.editor` session；新增 `inline.editor.profile.tsx` 和 payload schema，并编译系统 profile artifact；删除旧 `/api/writing/continue`、`NovelContinue*` DTO、OpenAPI route-map/generator SSE 特判和首页旧 SSE 调用链。
+- 2026-06-18：审查后修复三类问题。短格式 selection chip 解析收窄为明确文件路径，避免把 `issue#123` 和 URL fragment 误识别为选区；TipTap 选区行号优先基于编辑器选区位置和序列化 Markdown 前缀推导，不再只依赖纯文本匹配；Prompt Bar 的 edit/write 预览只显示当前 `inline.editor` session 中正在运行的工具调用，避免无关历史工具污染。
 
 ## Code Research Notes
 
@@ -344,6 +345,9 @@ L14 | ...
 - Done: 事件链已贯通 `MarkdownSelectionMenu -> TipTapMarkdownEditor -> MarkdownStudio -> MarkdownStudioWorkbench -> app/pages/index.vue -> AgentChatSurface`。
 - Done: `inline.editor` 系统 profile 已新增并编译，工具包含 `read`、`edit`、`write`、`report_result`，payload 被渲染成 XML，选区正文只出现在 hidden payload / profile prompt 中。
 - Done: `AgentChatSurface` 已支持自动创建 / 复用 Project 级 `inline.editor` session，并暴露 edit/write 工具轻量预览给 Prompt Bar。
+- Done: 短格式 selection chip 已收窄，`issue#123` / `https://example.com/a#45` 不会再被误识别；`src/server.ts#45-67` 仍会 canonical 序列化为 `[[src/server.ts#L45-L67]]`。
+- Done: TipTap selection chip 行号定位优先使用编辑器选区位置，包含标题 / Markdown 标记的选区也能尽力生成行号；失败时仍回退到旧的唯一文本匹配。
+- Done: Prompt Bar 顶部 edit/write 预览已限制为当前 `inline.editor` session 的运行中工具调用，不展示主创 session 或历史已完成工具调用。
 - Done: `reference/agent/profile-routing.md` 和 `PROJECT-STATUS.md` 已同步。
 - Follow-up: 第一版 session 绑定按钮会创建 / 加载 `inline.editor` session；模型切换复用 Agent 面板现有 session 模型控制，后续可补 Prompt Bar 内原地模型选择菜单和 session 选择弹窗。
 - Follow-up: v1 只支持 TipTap 富文本 selection menu 选区捕获；Monaco / 源码模式选区捕获后续单独补。
@@ -356,4 +360,6 @@ L14 | ...
 - Passed: `bun scripts/build/profile.ts status --all --system`
 - Passed with existing route-map warnings: `bun run generate:openapi`。命令成功退出，但仍报告 24 个 Plot route-map 条目文件不存在；该问题不是本任务新增。
 - Passed: `bunx vue-tsc --noEmit --pretty false`
-- Not run: 浏览器交互验证。按项目规则不自动运行，后续如需要由用户明确要求后再做。
+- Passed: 浏览器交互审查已运行。打开 `http://localhost:3000/?project=workspace%2Fming-ding-zhi-shi-2`，进入 `manuscript/001-volume/001-chapter/index.md` 后，selection menu 的“加入 AI 引用”可展开 Prompt Bar，任务下拉可见改写 / 润色 / 扩写 / 缩写 / 续写 / 承接；未点击发送以避免真实改写文件。控制台无新增 error，仅有 Nuxt timer warning。
+- Passed after review fixes: `bunx vitest run app/utils/plain-reference-text.test.ts app/utils/markdown/render.test.ts`
+- Blocked after review fixes: `bunx vue-tsc --noEmit --pretty false` 和浏览器复验当前被本地依赖状态阻塞。`node_modules` 缺少 package.json 已声明的 `@nuxtjs/i18n`，页面进入 Nuxt 错误页；`bun install --frozen-lockfile` 拒绝执行，因为当前 `bun.lock` 没有该依赖且 frozen 模式会要求改锁文件。该问题不是 Inline Editor Agent 改动引入。

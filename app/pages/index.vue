@@ -157,6 +157,7 @@ const studio = useMarkdownStudioController({
 
 const {choose, prompt} = useDialog();
 const notification = useNotification();
+const {t} = useI18n();
 
 const novelItems = computed(() => novels.value.map((novel) => ({
     label: novel.title,
@@ -275,7 +276,7 @@ const displayActiveLeftTab = computed<NovelIdeTab | null>(() => {
 const ideToolPanelOpen = computed(() => !isAgentMode.value && displayActiveLeftTab.value !== null);
 const ideToolPanelStyle = computed(() => ideToolPanelOpen.value ? {width: `${leftPanelWidth.value}px`} : {width: "0px"});
 const displaySidebarActiveTab = computed<NovelIdeTab | "sessions" | null>(() => isAgentMode.value ? "sessions" : displayActiveLeftTab.value);
-const displayNovelTitle = computed(() => isUserAssetsWorkspace.value ? "用户资产" : currentNovel.value?.title ?? "");
+const displayNovelTitle = computed(() => isUserAssetsWorkspace.value ? t("ide.header.userAssets") : currentNovel.value?.title ?? "");
 const displayNovelItems = computed(() => isUserAssetsWorkspace.value ? [] : novelItems.value);
 const displayNovelIdForAgent = computed(() => isUserAssetsWorkspace.value ? "" : currentNovelId.value);
 const agentWorkspaceKey = computed(() => {
@@ -301,8 +302,8 @@ const displayActiveWorkspaceTabPath = computed(() => workspaceDisplayReady.value
 const displaySelectedFileNode = computed(() => workspaceDisplayReady.value ? selectedFileNode.value : null);
 const displayCurrentEditorKind = computed<WorkspaceEditorKind>(() => workspaceDisplayReady.value ? currentEditorKind.value : "readonly");
 const displayCurrentWorkspaceViewMode = computed<WorkspaceEditorViewMode>(() => workspaceDisplayReady.value ? currentWorkspaceViewMode.value : "source");
-const displaySelectedModel = computed(() => workspaceBootstrapped.value ? selectedModel.value : "未配置模型");
-const displaySelectedReasoning = computed(() => workspaceBootstrapped.value ? selectedReasoning.value : "中");
+const displaySelectedModel = computed(() => workspaceBootstrapped.value ? selectedModel.value : t("ide.shell.modelNotConfigured"));
+const displaySelectedReasoning = computed(() => workspaceBootstrapped.value ? selectedReasoning.value : t("ide.shell.defaultReasoning"));
 const displayMonacoTemporaryFontSize = computed(() => displayActiveWorkspaceTabPath.value
     ? monacoFontSizeOverridesByPath.value[displayActiveWorkspaceTabPath.value] ?? null
     : null);
@@ -345,10 +346,10 @@ const inlinePromptInstruction = ref("");
 const inlinePromptTask = ref<InlineEditTask>("polish");
 const inlinePromptReferences = ref<InlineEditReference[]>([]);
 const inlinePromptRunning = ref(false);
-const inlinePromptStatusText = ref("选择文本后点击加入 AI 引用");
+const inlinePromptStatusText = ref(t("ide.inlineAi.initialStatus"));
 const inlinePromptEditPreview = ref("");
 const displayInlinePromptSessionLabel = computed(() => {
-    return unref(agentSurfaceRef.value?.inlineEditorSessionLabel) || "自动 Inline AI Session";
+    return unref(agentSurfaceRef.value?.inlineEditorSessionLabel) || t("ide.inlineAi.sessionLabel");
 });
 const displayInlinePromptEditPreview = computed(() => {
     return unref(agentSurfaceRef.value?.inlineEditPreview) || inlinePromptEditPreview.value;
@@ -359,50 +360,50 @@ const inlinePromptAvailable = computed(() => {
         && (isMarkdownFile.value || isPlainTextFile.value);
 });
 
-const inlineTaskLabels: Record<InlineEditTask, string> = {
-    rewrite: "改写",
-    polish: "润色",
-    expand: "扩写",
-    condense: "缩写",
-    continue_after: "续写",
-    bridge: "承接",
-};
+const inlineTaskLabels = computed<Record<InlineEditTask, string>>(() => ({
+    rewrite: t("ide.inlineAi.taskRewrite"),
+    polish: t("ide.inlineAi.taskPolish"),
+    expand: t("ide.inlineAi.taskExpand"),
+    condense: t("ide.inlineAi.taskCondense"),
+    continue_after: t("ide.inlineAi.taskContinueAfter"),
+    bridge: t("ide.inlineAi.taskBridge"),
+}));
 
-const markdownCommandSections = [
+const markdownCommandSections = computed(() => [
     {
         id: "ai",
         title: "AI",
         items: [
-            createMarkdownCommandItem("command:ai-generate", "AI 生成", "占位，后续接入 AI 写入。", "i-lucide-sparkles", "paragraph", true),
-            createMarkdownCommandItem("command:ai-rewrite", "AI 改写", "占位，后续接入选区改写。", "i-lucide-wand-sparkles", "paragraph", true),
+            createMarkdownCommandItem("command:ai-generate", t("ide.markdownMenu.aiGenerate"), t("ide.markdownMenu.aiGenerateDescription"), "i-lucide-sparkles", "paragraph", true),
+            createMarkdownCommandItem("command:ai-rewrite", t("ide.markdownMenu.aiRewrite"), t("ide.markdownMenu.aiRewriteDescription"), "i-lucide-wand-sparkles", "paragraph", true),
         ],
     },
     {
         id: "style",
         title: "Style",
         items: [
-            createMarkdownCommandItem("command:paragraph", "正文", "切换为普通段落。", "i-lucide-type", "paragraph"),
-            createMarkdownCommandItem("command:heading-1", "标题 1", "插入一级标题。", "i-lucide-heading-1", "heading-1"),
-            createMarkdownCommandItem("command:heading-2", "标题 2", "插入二级标题。", "i-lucide-heading-2", "heading-2"),
-            createMarkdownCommandItem("command:heading-3", "标题 3", "插入三级标题。", "i-lucide-heading-3", "heading-3"),
-            createMarkdownCommandItem("command:bullet-list", "无序列表", "切换无序列表。", "i-lucide-list", "bullet-list"),
-            createMarkdownCommandItem("command:ordered-list", "有序列表", "切换有序列表。", "i-lucide-list-ordered", "ordered-list"),
-            createMarkdownCommandItem("command:blockquote", "引用块", "切换引用块。", "i-lucide-text-quote", "blockquote"),
-            createMarkdownCommandItem("command:code-block", "代码块", "插入代码块。", "i-lucide-square-code", "code-block"),
-            createMarkdownCommandItem("command:horizontal-rule", "分割线", "插入水平分割线。", "i-lucide-minus", "horizontal-rule"),
+            createMarkdownCommandItem("command:paragraph", t("ide.markdownMenu.paragraph"), t("ide.markdownMenu.paragraphDescription"), "i-lucide-type", "paragraph"),
+            createMarkdownCommandItem("command:heading-1", t("ide.markdownMenu.heading1"), t("ide.markdownMenu.heading1Description"), "i-lucide-heading-1", "heading-1"),
+            createMarkdownCommandItem("command:heading-2", t("ide.markdownMenu.heading2"), t("ide.markdownMenu.heading2Description"), "i-lucide-heading-2", "heading-2"),
+            createMarkdownCommandItem("command:heading-3", t("ide.markdownMenu.heading3"), t("ide.markdownMenu.heading3Description"), "i-lucide-heading-3", "heading-3"),
+            createMarkdownCommandItem("command:bullet-list", t("ide.markdownMenu.bulletList"), t("ide.markdownMenu.bulletListDescription"), "i-lucide-list", "bullet-list"),
+            createMarkdownCommandItem("command:ordered-list", t("ide.markdownMenu.orderedList"), t("ide.markdownMenu.orderedListDescription"), "i-lucide-list-ordered", "ordered-list"),
+            createMarkdownCommandItem("command:blockquote", t("ide.markdownMenu.blockquote"), t("ide.markdownMenu.blockquoteDescription"), "i-lucide-text-quote", "blockquote"),
+            createMarkdownCommandItem("command:code-block", t("ide.markdownMenu.codeBlock"), t("ide.markdownMenu.codeBlockDescription"), "i-lucide-square-code", "code-block"),
+            createMarkdownCommandItem("command:horizontal-rule", t("ide.markdownMenu.horizontalRule"), t("ide.markdownMenu.horizontalRuleDescription"), "i-lucide-minus", "horizontal-rule"),
         ],
     },
     {
         id: "insert",
         title: "Insert",
         items: [
-            createMarkdownCommandItem("command:image", "图片", "占位，后续插入图片语法。", "i-lucide-image", "image", true),
-            createMarkdownCommandItem("command:link", "链接", "占位，后续插入普通链接。", "i-lucide-link", "link", true),
-            createMarkdownCommandItem("command:reference", "引用", "切换到 @ 引用菜单。", "i-lucide-at-sign", "reference"),
-            createMarkdownCommandItem("command:comment", "评论", "占位，后续插入评论。", "i-lucide-message-square-plus", "comment", true),
+            createMarkdownCommandItem("command:image", t("ide.markdownMenu.image"), t("ide.markdownMenu.imageDescription"), "i-lucide-image", "image", true),
+            createMarkdownCommandItem("command:link", t("ide.markdownMenu.link"), t("ide.markdownMenu.linkDescription"), "i-lucide-link", "link", true),
+            createMarkdownCommandItem("command:reference", t("ide.markdownMenu.reference"), t("ide.markdownMenu.referenceDescription"), "i-lucide-at-sign", "reference"),
+            createMarkdownCommandItem("command:comment", t("ide.markdownMenu.comment"), t("ide.markdownMenu.commentDescription"), "i-lucide-message-square-plus", "comment", true),
         ],
     },
-];
+]);
 
 /**
  * 创建 Markdown slash command 菜单项。
@@ -474,14 +475,14 @@ function resolveMarkdownSkillMenu(context: AgentTriggerMenuContext): AgentTrigge
 
     if (markdownSkillCatalogLoading.value && items.length === 0) {
         return {
-            title: "调用技能",
+            title: t("ide.markdownMenu.skillTitle"),
             prefix: "$",
             sections: [{
                 id: "skill-loading",
                 items: [{
                     id: "skill:loading",
-                    label: "加载技能中",
-                    description: "正在读取当前仓库的 skills catalog。",
+                    label: t("ide.markdownMenu.skillLoading"),
+                    description: t("ide.markdownMenu.skillLoadingDescription"),
                     iconClass: "i-lucide-loader-circle animate-spin",
                     disabled: true,
                 }],
@@ -491,14 +492,14 @@ function resolveMarkdownSkillMenu(context: AgentTriggerMenuContext): AgentTrigge
 
     if (markdownSkillCatalogLoaded.value && items.length === 0) {
         return {
-            title: "调用技能",
+            title: t("ide.markdownMenu.skillTitle"),
             prefix: "$",
             sections: [{
                 id: "skill-empty",
                 items: [{
                     id: "skill:empty",
-                    label: "没有匹配技能",
-                    description: markdownSkillCatalog.value.length > 0 ? "当前查询没有匹配的 skill。" : "当前仓库还没有可用的 skill。",
+                    label: t("ide.markdownMenu.skillEmpty"),
+                    description: markdownSkillCatalog.value.length > 0 ? t("ide.markdownMenu.skillNoMatchDescription") : t("ide.markdownMenu.skillNoneDescription"),
                     iconClass: "i-lucide-info",
                     disabled: true,
                 }],
@@ -507,7 +508,7 @@ function resolveMarkdownSkillMenu(context: AgentTriggerMenuContext): AgentTrigge
     }
 
     return {
-        title: "调用技能",
+        title: t("ide.markdownMenu.skillTitle"),
         prefix: "$",
         sections: items.length > 0 ? [{id: "skill", items}] : [],
     };
@@ -519,14 +520,14 @@ function resolveMarkdownSkillMenu(context: AgentTriggerMenuContext): AgentTrigge
 function resolveMarkdownMenu(context: AgentTriggerMenuContext): AgentTriggerMenuState {
     if (context.kind === "command") {
         const query = context.query.trim().toLocaleLowerCase("zh-CN");
-        const sections = markdownCommandSections
+        const sections = markdownCommandSections.value
             .map((section) => ({
                 ...section,
                 items: section.items.filter((item) => !query || `${item.label} ${item.description} ${item.hint ?? ""}`.toLocaleLowerCase("zh-CN").includes(query)),
             }))
             .filter((section) => section.items.length > 0);
         return {
-            title: "命令",
+            title: t("ide.markdownMenu.commandTitle"),
             prefix: "/",
             sections: sections.length > 0 ? sections : [createEmptyMenuSection(context.query)],
         };
@@ -537,7 +538,7 @@ function resolveMarkdownMenu(context: AgentTriggerMenuContext): AgentTriggerMenu
 
     const referenceSections = buildWorkspaceReferenceSections(workspaceTree.value, context.query);
     return {
-        title: "引用",
+        title: t("ide.markdownMenu.referenceTitle"),
         prefix: "@",
         sections: referenceSections.length > 0 ? referenceSections : [createEmptyMenuSection(context.query)],
     };
@@ -547,14 +548,14 @@ function resolveMarkdownMenu(context: AgentTriggerMenuContext): AgentTriggerMenu
  * 搜索无结果时仍保留菜单，避免 Suggestion 直接关闭。
  */
 function createEmptyMenuSection(query: string): {id: string; title: string; items: AgentTriggerMenuItem[]} {
-    const label = query.trim() ? "没有匹配结果" : "暂无可引用内容";
+    const label = query.trim() ? t("ide.markdownMenu.noMatch") : t("ide.markdownMenu.noReference");
     return {
         id: "empty",
         title: "",
         items: [{
             id: "empty-result",
             label,
-            description: query.trim() ? "换一个关键词试试。" : "当前工作区没有可引用的 Markdown 文件或内容节点。",
+            description: query.trim() ? t("ide.markdownMenu.tryAnotherKeyword") : t("ide.markdownMenu.noWorkspaceReference"),
             iconClass: "i-lucide-search-x",
             disabled: true,
         }],
@@ -567,7 +568,7 @@ function createEmptyMenuSection(query: string): {id: string; title: string; item
 async function openWorkspaceReference(target: string): Promise<void> {
     const resolvedPath = resolveReferencePath(target, selectedFilePath.value);
     if (!resolvedPath) {
-        notification.warning(`引用目标不存在或不可打开：${target}`, {title: "打开引用失败"});
+        notification.warning(t("ide.shell.referenceOpenMissing", {target}), {title: t("ide.shell.referenceOpenFailedTitle")});
         return;
     }
     await novelIdeStore.openWorkspacePath(resolvedPath, "permanent");
@@ -759,7 +760,7 @@ const saveCurrentWorkspaceFile = async (): Promise<void> => {
     try {
         await saveCurrentFile();
     } catch (error) {
-        notification.error(resolveApiErrorMessage(error, "自动保存失败"), {title: "保存失败"});
+        notification.error(resolveApiErrorMessage(error, t("ide.shell.autoSaveFailed")), {title: t("ide.shell.autoSaveFailedTitle")});
     } finally {
         if (saveQueued.value && !novelIdeStore.workspaceWriteConflict && selectedFileContent.value !== lastSyncedFileContent.value) {
             saveQueued.value = false;
@@ -780,8 +781,8 @@ function addInlineAiReference(reference: InlineEditReference): void {
     ];
     inlinePromptExpanded.value = true;
     inlinePromptStatusText.value = reference.match === "unique"
-        ? "已加入选区引用"
-        : "已加入选区引用，行号仅作弱定位";
+        ? t("ide.inlineAi.referenceAdded")
+        : t("ide.inlineAi.referenceAddedWeak");
 }
 
 /**
@@ -798,8 +799,8 @@ function buildInlineVisibleMessage(payload: InlineEditPayload): string {
     const chips = payload.references.length > 0
         ? payload.references.map((reference) => reference.ref)
         : [buildSelectionRefChip({path: payload.targetPath})];
-    const instruction = payload.instruction.trim() || "按当前任务处理。";
-    return `**${inlineTaskLabels[payload.task]}** ${chips.join(" ")}\n\n${instruction}`;
+    const instruction = payload.instruction.trim() || t("ide.inlineAi.defaultInstruction");
+    return `**${inlineTaskLabels.value[payload.task]}** ${chips.join(" ")}\n\n${instruction}`;
 }
 
 /**
@@ -810,15 +811,15 @@ async function sendInlineEditorPrompt(): Promise<void> {
         return;
     }
     if (!inlinePromptAvailable.value) {
-        notification.warning("当前文件不支持 Inline AI 编辑。", {title: "Inline AI"});
+        notification.warning(t("ide.inlineAi.unsupportedFile"), {title: "Inline AI"});
         return;
     }
     if (!selectedFilePath.value) {
-        notification.warning("请先打开一个可编辑文本文件。", {title: "Inline AI"});
+        notification.warning(t("ide.inlineAi.openEditableFileFirst"), {title: "Inline AI"});
         return;
     }
     if (!inlinePromptInstruction.value.trim() && inlinePromptReferences.value.length === 0) {
-        notification.warning("请先输入编辑要求，或从选区菜单加入 AI 引用。", {title: "Inline AI"});
+        notification.warning(t("ide.inlineAi.missingInstruction"), {title: "Inline AI"});
         return;
     }
 
@@ -831,23 +832,23 @@ async function sendInlineEditorPrompt(): Promise<void> {
     };
     const agentSurface = agentSurfaceRef.value;
     if (!agentSurface?.sendInlineEditorPrompt) {
-        notification.error("Agent 面板尚未准备好。", {title: "Inline AI"});
+        notification.error(t("ide.inlineAi.agentNotReady"), {title: "Inline AI"});
         return;
     }
 
     await saveCurrentWorkspaceFile();
     rightPanelOpen.value = true;
     inlinePromptRunning.value = true;
-    inlinePromptStatusText.value = "正在发送给 Inline AI...";
+    inlinePromptStatusText.value = t("ide.inlineAi.sending");
     inlinePromptEditPreview.value = "";
 
     try {
         await agentSurface.sendInlineEditorPrompt(payload, buildInlineVisibleMessage(payload));
         inlinePromptInstruction.value = "";
         inlinePromptReferences.value = [];
-        inlinePromptStatusText.value = "Inline AI 已开始处理";
+        inlinePromptStatusText.value = t("ide.inlineAi.started");
     } catch (error) {
-        inlinePromptStatusText.value = resolveApiErrorMessage(error, "Inline AI 发送失败");
+        inlinePromptStatusText.value = resolveApiErrorMessage(error, t("ide.inlineAi.sendFailed"));
         notification.error(inlinePromptStatusText.value, {title: "Inline AI"});
     } finally {
         inlinePromptRunning.value = false;
@@ -860,7 +861,7 @@ async function sendInlineEditorPrompt(): Promise<void> {
 async function stopInlineEditorPrompt(): Promise<void> {
     await agentSurfaceRef.value?.stopInlineEditorPrompt?.();
     inlinePromptRunning.value = false;
-    inlinePromptStatusText.value = "已请求停止 Inline AI";
+    inlinePromptStatusText.value = t("ide.inlineAi.stopRequested");
 }
 
 /**
@@ -870,9 +871,9 @@ async function bindInlineEditorSession(): Promise<void> {
     rightPanelOpen.value = true;
     try {
         await agentSurfaceRef.value?.openInlineEditorSession?.();
-        inlinePromptStatusText.value = "已绑定 Inline AI Session";
+        inlinePromptStatusText.value = t("ide.inlineAi.boundSession");
     } catch (error) {
-        inlinePromptStatusText.value = resolveApiErrorMessage(error, "绑定 Inline AI Session 失败");
+        inlinePromptStatusText.value = resolveApiErrorMessage(error, t("ide.inlineAi.bindFailed"));
         notification.error(inlinePromptStatusText.value, {title: "Inline AI"});
     }
 }
@@ -884,9 +885,9 @@ async function changeInlineEditorModel(): Promise<void> {
     rightPanelOpen.value = true;
     try {
         await agentSurfaceRef.value?.openInlineEditorSession?.();
-        inlinePromptStatusText.value = "已打开 Inline AI Session，可在 Agent 面板切换模型";
+        inlinePromptStatusText.value = t("ide.inlineAi.modelPanelOpened");
     } catch (error) {
-        inlinePromptStatusText.value = resolveApiErrorMessage(error, "打开 Inline AI Session 失败");
+        inlinePromptStatusText.value = resolveApiErrorMessage(error, t("ide.inlineAi.openModelPanelFailed"));
         notification.error(inlinePromptStatusText.value, {title: "Inline AI"});
     }
 }
@@ -909,7 +910,7 @@ watch(currentWorkspaceViewMode, (mode) => {
 watch(selectedFilePath, () => {
     inlinePromptReferences.value = [];
     inlinePromptEditPreview.value = "";
-    inlinePromptStatusText.value = "选择文本后点击加入 AI 引用";
+    inlinePromptStatusText.value = t("ide.inlineAi.initialStatus");
 });
 
 /**
@@ -924,11 +925,11 @@ const closeEditorTab = async (filePath: string): Promise<void> => {
         await closeWorkspaceTab(filePath, true);
         return;
     }
-    const action = await choose("当前标签有未保存修改，是否先保存？", [
-        {label: "保存", value: "save", tone: "primary"},
-        {label: "放弃", value: "discard", tone: "danger"},
-        {label: "取消", value: "cancel"},
-    ], "关闭标签");
+    const action = await choose(t("ide.shell.closeTabUnsaved"), [
+        {label: t("ide.shell.save"), value: "save", tone: "primary"},
+        {label: t("ide.shell.discard"), value: "discard", tone: "danger"},
+        {label: t("common.cancel"), value: "cancel"},
+    ], t("ide.shell.closeTabTitle"));
     if (action === "cancel") {
         return;
     }
@@ -954,11 +955,11 @@ const resolveUnsavedWorkspaceChanges = async (): Promise<WorkspaceSwitchDecision
         return "save";
     }
 
-    const action = await choose("当前 workspace 有未保存修改，是否先保存？", [
-        {label: "保存", value: "save", tone: "primary"},
-        {label: "放弃", value: "discard", tone: "danger"},
-        {label: "取消", value: "cancel"},
-    ], "未保存修改");
+    const action = await choose(t("ide.shell.unsavedWorkspaceMessage"), [
+        {label: t("ide.shell.save"), value: "save", tone: "primary"},
+        {label: t("ide.shell.discard"), value: "discard", tone: "danger"},
+        {label: t("common.cancel"), value: "cancel"},
+    ], t("ide.shell.unsavedWorkspaceTitle"));
 
     if (action === "cancel") {
         return "cancel";
@@ -1306,10 +1307,10 @@ const flushWorkspaceFileEvents = async (): Promise<void> => {
             pendingWorkspaceFileEvents = [];
             const result = await syncWorkspaceFromDisk(events);
             if (result.activeFile === "dirty") {
-                notification.warning("磁盘文件已更新，但当前编辑器有未保存修改，已保留本地内容。", {title: "文件同步冲突"});
+                notification.warning(t("ide.shell.fileSyncConflictMessage"), {title: t("ide.shell.fileSyncConflictTitle")});
             }
             if (result.activeFile === "deleted") {
-                notification.warning("当前文件已在磁盘中删除，编辑器已关闭该文件。", {title: "文件已删除"});
+                notification.warning(t("ide.shell.fileDeletedMessage"), {title: t("ide.shell.fileDeletedTitle")});
             }
         }
     } finally {
@@ -1353,7 +1354,7 @@ const subscribeWorkspaceEvents = (): void => {
                 return;
             }
             console.warn("[workspace-files] event stream failed", error);
-            notification.warning("文件实时同步连接已断开，请手动刷新或重新打开小说。", {title: "同步中断"});
+            notification.warning(t("ide.shell.syncInterruptedMessage"), {title: t("ide.shell.syncInterruptedTitle")});
         });
 };
 
@@ -1524,7 +1525,7 @@ async function openWelcomeWorkspacePath(filePath: string): Promise<void> {
     try {
         await novelIdeStore.selectWorkspacePath(filePath, "permanent");
     } catch (error) {
-        notification.error(resolveApiErrorMessage(error, `无法打开 ${filePath}`), {title: "打开路径失败"});
+        notification.error(resolveApiErrorMessage(error, t("ide.shell.openPathFailed", {path: filePath})), {title: t("ide.shell.openPathFailedTitle")});
     }
 }
 
@@ -1564,48 +1565,48 @@ function toggleWelcomeAgentSurface(): void {
  * 创建欢迎页默认章节文件。
  */
 async function createWelcomeChapter(): Promise<void> {
-    const input = await prompt("请输入章节路径", "manuscript/001-volume/new-chapter/index.md", "新建章节");
+    const input = await prompt(t("ide.shell.createChapterPrompt"), "manuscript/001-volume/new-chapter/index.md", t("ide.shell.createChapterTitle"));
     const filePath = normalizeWelcomeChapterPath(input);
     if (!filePath) {
         return;
     }
-    await createWelcomeFile(filePath, buildWelcomeMarkdownContent(filePath), "创建章节失败");
+    await createWelcomeFile(filePath, buildWelcomeMarkdownContent(filePath), t("ide.shell.createChapterFailed"));
 }
 
 /**
  * 创建欢迎页普通 Markdown 文件。
  */
 async function createWelcomeMarkdownFile(): Promise<void> {
-    const input = await prompt("请输入 Markdown 文件路径", "manuscript/new-file.md", "新建 Markdown");
+    const input = await prompt(t("ide.shell.createMarkdownPrompt"), "manuscript/new-file.md", t("ide.shell.createMarkdownTitle"));
     const filePath = normalizeWelcomeMarkdownPath(input);
     if (!filePath) {
         return;
     }
-    await createWelcomeFile(filePath, buildWelcomeMarkdownContent(filePath), "创建 Markdown 失败");
+    await createWelcomeFile(filePath, buildWelcomeMarkdownContent(filePath), t("ide.shell.createMarkdownFailed"));
 }
 
 /**
  * 创建欢迎页 Lorebook 条目。
  */
 async function createWelcomeLorebookEntry(): Promise<void> {
-    const selectedType = await choose("请选择世界书条目类型", [
-        {label: "地点", value: "location", tone: "primary"},
-        {label: "角色", value: "character"},
-        {label: "物品", value: "item"},
-        {label: "规则", value: "rule"},
-        {label: "笔记", value: "note"},
-        {label: "取消", value: "cancel"},
-    ], "新建世界书条目");
+    const selectedType = await choose(t("ide.shell.createLorebookTypePrompt"), [
+        {label: t("ide.shell.lorebookLocation"), value: "location", tone: "primary"},
+        {label: t("ide.shell.lorebookCharacter"), value: "character"},
+        {label: t("ide.shell.lorebookItem"), value: "item"},
+        {label: t("ide.shell.lorebookRule"), value: "rule"},
+        {label: t("ide.shell.lorebookNote"), value: "note"},
+        {label: t("common.cancel"), value: "cancel"},
+    ], t("ide.shell.createLorebookTitle"));
     if (!isWelcomeLorebookEntryType(selectedType)) {
         return;
     }
 
-    const input = await prompt("请输入世界书条目路径", `lorebook/${selectedType}/new-entry/index.md`, "新建世界书条目");
+    const input = await prompt(t("ide.shell.createLorebookPathPrompt"), `lorebook/${selectedType}/new-entry/index.md`, t("ide.shell.createLorebookTitle"));
     const filePath = normalizeWelcomeLorebookPath(input, selectedType);
     if (!filePath) {
         return;
     }
-    await createWelcomeFile(filePath, buildWelcomeLorebookContent(filePath, selectedType), "创建世界书条目失败");
+    await createWelcomeFile(filePath, buildWelcomeLorebookContent(filePath, selectedType), t("ide.shell.createLorebookFailed"));
 }
 
 /**
@@ -1615,7 +1616,7 @@ async function createWelcomeFile(filePath: string, content: string, fallbackMess
     try {
         const node = await novelIdeStore.createWorkspaceFile(filePath, content);
         await novelIdeStore.selectWorkspacePath(node.path, "permanent");
-        notification.success(`已创建 ${node.path}`, {title: "创建成功"});
+        notification.success(t("ide.shell.createSuccess", {path: node.path}), {title: t("ide.shell.createSuccessTitle")});
     } catch (error) {
         notification.error(resolveApiErrorMessage(error, fallbackMessage), {title: fallbackMessage});
     }
@@ -1845,7 +1846,7 @@ onBeforeUnmount(() => {
                     <div class="min-w-0">
                         <div class="text-[12px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">Studio</div>
                     </div>
-                    <button type="button" class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" :title="agentStudioFileTreeOpen ? '收起文件树' : '展开文件树'" @click="agentStudioFileTreeOpen = !agentStudioFileTreeOpen">
+                    <button type="button" class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" :title="agentStudioFileTreeOpen ? t('ide.shell.collapseFileTree') : t('ide.shell.expandFileTree')" @click="agentStudioFileTreeOpen = !agentStudioFileTreeOpen">
                         <span :class="agentStudioFileTreeOpen ? 'i-lucide-panel-right-close' : 'i-lucide-folder-tree'" class="h-4 w-4"></span>
                     </button>
                 </div>

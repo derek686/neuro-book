@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {EditorContent, useEditor} from "@tiptap/vue-3";
-import {getTextBetween, getTextSerializersFromSchema, type Editor} from "@tiptap/core";
+import {getTextBetween, getTextSerializersFromSchema, type Editor, type JSONContent} from "@tiptap/core";
 import {flattenAgentSuggestionItems, type AgentSuggestionMenuState} from "nbook/app/components/novel-ide/agent/tiptap/agent-suggestion";
 import type {AgentTriggerMenuContext, AgentTriggerMenuState} from "nbook/app/components/novel-ide/agent/trigger-menu";
 import ContextMenu, {type ContextMenuItem} from "nbook/app/components/common/ContextMenu.vue";
@@ -15,7 +15,7 @@ import {useNotification} from "nbook/app/composables/useNotification";
 import {refreshWorkspaceReferenceNodes, type WorkspaceReferenceResolver} from "nbook/app/components/markdown-studio/tiptap/WorkspaceReference";
 import {DEFAULT_MARKDOWN_EDITOR_PREFERENCES, type FrontmatterProfileKind, type MarkdownEditorPreferences} from "nbook/shared/editor-workbench";
 import {splitMarkdownFrontmatter} from "nbook/shared/editor-workbench";
-import {buildSelectionRefChip, locateSelectionRange, type InlineEditReference} from "nbook/app/utils/inline-editor-selection";
+import {buildSelectionRefChip, locateSelectionRange, type InlineEditReference, type SelectionRangeLocation} from "nbook/app/utils/inline-editor-selection";
 import YAML from "yaml";
 
 type PopoverDirection = "auto" | "up" | "down";
@@ -43,7 +43,7 @@ const props = withDefaults(defineProps<{
     visible: true,
     readonly: false,
     editorPreferences: () => ({...DEFAULT_MARKDOWN_EDITOR_PREFERENCES}),
-    placeholder: "请输入 Markdown 内容...",
+    placeholder: "",
     autofocus: false,
     activePath: "",
     referenceRefreshKey: "",
@@ -76,6 +76,7 @@ const emit = defineEmits<{
 
 const {prompt} = useDialog();
 const notification = useNotification();
+const {t} = useI18n();
 const wrapperRef = ref<HTMLDivElement | null>(null);
 const focused = ref(false);
 const syncingFromOutside = ref(false);
@@ -92,6 +93,7 @@ const contextMenuY = ref(0);
 const contextMenuItems = ref<ContextMenuItem[]>([]);
 const skillTriggerStarted = ref(false);
 const popoverTeleportTarget = computed(() => wrapperRef.value?.closest(".novel-ide-theme") as HTMLElement | null);
+const editorPlaceholder = computed(() => props.placeholder || t("markdownStudio.editor.placeholder"));
 const menuVisible = computed(() => Boolean(suggestionMenuState.value && suggestionMenuState.value.items.length > 0));
 const skillTriggerActive = computed(() => suggestionMenuState.value?.contextKind === "skill");
 const editorPreferenceStyle = computed(() => {
@@ -135,9 +137,9 @@ const frontmatterError = computed(() => {
         if (parsed === null || (typeof parsed === "object" && !Array.isArray(parsed))) {
             return "";
         }
-        return "frontmatter 必须是对象";
+        return t("markdownStudio.editor.frontmatterObjectError");
     } catch (error) {
-        return error instanceof Error ? error.message : "frontmatter 解析失败";
+        return error instanceof Error ? error.message : t("markdownStudio.editor.frontmatterParseFailed");
     }
 });
 
@@ -158,11 +160,21 @@ function readEditorMarkdown(currentEditor: Editor | null | undefined): string {
     return currentEditor?.getMarkdown() ?? splitMarkdownFrontmatter(editorSnapshot.value).body;
 }
 
+/**
+ * 计算正文第一行在完整 Markdown 里的行号偏移，保证 selection chip 指向真实文件行号。
+ */
+function frontmatterLineOffset(): number {
+    if (!hasFrontmatter.value) {
+        return 0;
+    }
+    return `---\n${frontmatterText.value.trimEnd()}\n---\n\n`.split("\n").length - 1;
+}
+
 const editor = useEditor({
     content: splitMarkdownFrontmatter(props.initialValue).body,
     contentType: "markdown",
     extensions: createMarkdownEditorExtensions({
-        placeholder: props.placeholder,
+        placeholder: editorPlaceholder.value,
         resolveMenu: props.resolveMenu,
         onMenuStateChange: syncMenuState,
         getMenuState: () => suggestionMenuState.value,
@@ -514,7 +526,7 @@ async function editActiveComment(): Promise<void> {
     if (!activeComment) {
         return;
     }
-    const body = await prompt("评论内容", activeComment.body, "编辑评论");
+    const body = await prompt(t("markdownStudio.editor.commentBody"), activeComment.body, t("markdownStudio.editor.editComment"));
     if (body === null) {
         return;
     }
@@ -635,22 +647,73 @@ function selectedClipboardText(): string {
 }
 
 /**
+ * 用 TipTap 选区位置推导 Markdown 行号；失败时由调用方回退到文本匹配。
+ */
+function locateSelectionRangeFromEditor(currentEditor: Editor): SelectionRangeLocation {
+    const {from, to} = currentEditor.state.selection;
+    if (from === to) {
+        return {match: "unknown"};
+    }
+    try {
+        const offset = frontmatterLineOffset();
+        const startLine = offset + countMarkdownLines(serializeEditorPrefix(currentEditor, from));
+        const endLine = offset + countMarkdownLines(serializeEditorPrefix(currentEditor, to));
+        return {
+            match: "unique",
+            range: {
+                startLine,
+                endLine: Math.max(startLine, endLine),
+            },
+        };
+    } catch {
+        return {match: "unknown"};
+    }
+}
+
+/**
+ * 序列化从文档开头到指定 ProseMirror 位置的 Markdown 前缀。
+ */
+function serializeEditorPrefix(currentEditor: Editor, position: number): string {
+    const manager = currentEditor.markdown;
+    if (!manager) {
+        return "";
+    }
+    const safePosition = Math.floor(clampNumber(position, 0, currentEditor.state.doc.content.size, 0));
+    const prefixDoc = currentEditor.state.doc.cut(0, safePosition);
+    return manager.serialize(prefixDoc.toJSON() as JSONContent);
+}
+
+/**
+ * 统计 Markdown 片段占用的行数；空前缀仍位于第 1 行。
+ */
+function countMarkdownLines(markdown: string): number {
+    if (!markdown) {
+        return 1;
+    }
+    return markdown.replace(/\r\n/g, "\n").split("\n").length;
+}
+
+/**
  * 把当前选区加入 Inline AI 引用。
  */
 function addAiReferenceFromSelection(): void {
+    const currentEditor = editor.value;
     const path = props.activePath.trim();
     if (!path) {
-        notification.warning("当前文件路径为空，无法加入 AI 引用");
+        notification.warning(t("markdownStudio.editor.currentPathMissing"));
         return;
     }
 
     const text = selectedClipboardText().trim();
     if (!text) {
-        notification.warning("请先选择需要引用的正文");
+        notification.warning(t("markdownStudio.editor.selectBodyFirst"));
         return;
     }
 
-    const located = locateSelectionRange(getMarkdown(), text);
+    const locatedFromEditor: SelectionRangeLocation = currentEditor ? locateSelectionRangeFromEditor(currentEditor) : {match: "unknown"};
+    const located = locatedFromEditor.match === "unique"
+        ? locatedFromEditor
+        : locateSelectionRange(getMarkdown(), text);
     emit("inline-ai-reference", {
         ref: buildSelectionRefChip({
             path,
@@ -682,7 +745,7 @@ async function copySelection(): Promise<void> {
     try {
         await navigator.clipboard.writeText(text);
     } catch {
-        notification.warning("浏览器拒绝访问剪贴板，请使用系统快捷键复制。", {title: "复制失败"});
+        notification.warning(t("markdownStudio.editor.copyFailed"), {title: t("markdownStudio.editor.copyFailedTitle")});
     }
 }
 
@@ -697,7 +760,7 @@ async function cutSelection(): Promise<void> {
         await navigator.clipboard.writeText(selectedClipboardText());
         editor.value?.chain().focus().deleteSelection().run();
     } catch {
-        notification.warning("浏览器拒绝访问剪贴板，请使用系统快捷键剪切。", {title: "剪切失败"});
+        notification.warning(t("markdownStudio.editor.cutFailed"), {title: t("markdownStudio.editor.cutFailedTitle")});
     }
 }
 
@@ -714,7 +777,7 @@ async function pasteText(): Promise<void> {
             insertMarkdown(text);
         }
     } catch {
-        notification.warning("浏览器拒绝读取剪贴板，请使用系统快捷键粘贴。", {title: "粘贴失败"});
+        notification.warning(t("markdownStudio.editor.pasteFailed"), {title: t("markdownStudio.editor.pasteFailedTitle")});
     }
 }
 
@@ -725,11 +788,11 @@ async function insertLinkFromMenu(): Promise<void> {
     if (props.readonly) {
         return;
     }
-    const label = await prompt("链接文本", selectedText() || "title", "插入链接");
+    const label = await prompt(t("markdownStudio.editor.linkText"), selectedText() || "title", t("markdownStudio.editor.insertLink"));
     if (label === null) {
         return;
     }
-    const url = await prompt("链接地址", "https://", "插入链接");
+    const url = await prompt(t("markdownStudio.editor.linkUrl"), "https://", t("markdownStudio.editor.insertLink"));
     if (url === null || !url.trim()) {
         return;
     }
@@ -743,7 +806,7 @@ async function insertImageFromMenu(): Promise<void> {
     if (props.readonly) {
         return;
     }
-    const url = await prompt("图片地址", "", "插入图片");
+    const url = await prompt(t("markdownStudio.editor.imageUrl"), "", t("markdownStudio.editor.insertImage"));
     if (url === null || !url.trim()) {
         return;
     }
@@ -757,7 +820,7 @@ async function addCommentFromMenu(): Promise<void> {
     if (props.readonly || !hasSelection()) {
         return;
     }
-    const body = await prompt("评论内容", "", "添加评论");
+    const body = await prompt(t("markdownStudio.editor.commentBody"), "", t("markdownStudio.editor.addComment"));
     if (body === null || !body.trim()) {
         return;
     }
@@ -782,22 +845,22 @@ function buildContextMenuItems(): ContextMenuItem[] {
     const selectionDisabled = !hasSelection();
     const activeComment = findActiveInlineComment(editor.value);
     return [
-        {label: "保存", iconClass: "i-lucide-save", shortcut: "Ctrl+S", action: () => emit("save-request")},
+        {label: t("markdownStudio.editor.menuSave"), iconClass: "i-lucide-save", shortcut: "Ctrl+S", action: () => emit("save-request")},
         {separator: true},
-        {label: "撤销", iconClass: "i-lucide-undo-2", shortcut: "Ctrl+Z", disabled: writeDisabled, action: undo},
-        {label: "重做", iconClass: "i-lucide-redo-2", shortcut: "Ctrl+Y", disabled: writeDisabled, action: redo},
+        {label: t("markdownStudio.editor.menuUndo"), iconClass: "i-lucide-undo-2", shortcut: "Ctrl+Z", disabled: writeDisabled, action: undo},
+        {label: t("markdownStudio.editor.menuRedo"), iconClass: "i-lucide-redo-2", shortcut: "Ctrl+Y", disabled: writeDisabled, action: redo},
         {separator: true},
-        {label: "剪切", iconClass: "i-lucide-scissors", shortcut: "Ctrl+X", disabled: writeDisabled || selectionDisabled, action: () => void cutSelection()},
-        {label: "复制", iconClass: "i-lucide-copy", shortcut: "Ctrl+C", disabled: selectionDisabled, action: () => void copySelection()},
-        {label: "粘贴", iconClass: "i-lucide-clipboard-paste", shortcut: "Ctrl+V", disabled: writeDisabled, action: () => void pasteText()},
+        {label: t("markdownStudio.editor.menuCut"), iconClass: "i-lucide-scissors", shortcut: "Ctrl+X", disabled: writeDisabled || selectionDisabled, action: () => void cutSelection()},
+        {label: t("markdownStudio.editor.menuCopy"), iconClass: "i-lucide-copy", shortcut: "Ctrl+C", disabled: selectionDisabled, action: () => void copySelection()},
+        {label: t("markdownStudio.editor.menuPaste"), iconClass: "i-lucide-clipboard-paste", shortcut: "Ctrl+V", disabled: writeDisabled, action: () => void pasteText()},
         {separator: true},
-        {label: "插入引用", iconClass: "i-lucide-at-sign", disabled: writeDisabled, action: openReferenceMenuFromContext},
-        {label: "插入链接", iconClass: "i-lucide-link", disabled: writeDisabled, action: () => void insertLinkFromMenu()},
-        {label: "插入图片", iconClass: "i-lucide-image", disabled: writeDisabled, action: () => void insertImageFromMenu()},
-        {label: "添加评论", iconClass: "i-lucide-message-square-plus", disabled: writeDisabled || selectionDisabled, action: () => void addCommentFromMenu()},
+        {label: t("markdownStudio.editor.menuInsertReference"), iconClass: "i-lucide-at-sign", disabled: writeDisabled, action: openReferenceMenuFromContext},
+        {label: t("markdownStudio.editor.menuInsertLink"), iconClass: "i-lucide-link", disabled: writeDisabled, action: () => void insertLinkFromMenu()},
+        {label: t("markdownStudio.editor.menuInsertImage"), iconClass: "i-lucide-image", disabled: writeDisabled, action: () => void insertImageFromMenu()},
+        {label: t("markdownStudio.editor.menuAddComment"), iconClass: "i-lucide-message-square-plus", disabled: writeDisabled || selectionDisabled, action: () => void addCommentFromMenu()},
         ...(activeComment ? [
-            {label: "编辑评论", iconClass: "i-lucide-message-square-text", disabled: writeDisabled, action: () => void editActiveComment()},
-            {label: "删除评论", iconClass: "i-lucide-message-square-x", disabled: writeDisabled, action: deleteActiveComment},
+            {label: t("markdownStudio.editor.menuEditComment"), iconClass: "i-lucide-message-square-text", disabled: writeDisabled, action: () => void editActiveComment()},
+            {label: t("markdownStudio.editor.menuDeleteComment"), iconClass: "i-lucide-message-square-x", disabled: writeDisabled, action: deleteActiveComment},
         ] : []),
     ];
 }

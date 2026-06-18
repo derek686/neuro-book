@@ -39,18 +39,19 @@ const emit = defineEmits<{
 
 const rootRef = ref<HTMLDivElement | null>(null);
 const editorRef = ref<InstanceType<typeof ReferencePlainTextEditor> | null>(null);
+const {t} = useI18n();
 let resizeObserver: ResizeObserver | null = null;
 
-const taskOptions: InlineTaskOption[] = [
-    {id: "rewrite", label: "改写", iconClass: "i-lucide-refresh-cw", description: "重写表达，保留核心含义"},
-    {id: "polish", label: "润色", iconClass: "i-lucide-sparkles", description: "改善文风、节奏和质感"},
-    {id: "expand", label: "扩写", iconClass: "i-lucide-stretch-horizontal", description: "增加细节、动作和氛围"},
-    {id: "condense", label: "缩写", iconClass: "i-lucide-shrink", description: "压缩啰嗦表达"},
-    {id: "continue_after", label: "续写", iconClass: "i-lucide-forward", description: "在引用之后继续写"},
-    {id: "bridge", label: "承接", iconClass: "i-lucide-git-compare-arrows", description: "承上启下，连接片段"},
-];
+const taskOptions = computed<InlineTaskOption[]>(() => [
+    {id: "rewrite", label: t("ide.inlineAi.taskRewrite"), iconClass: "i-lucide-refresh-cw", description: t("ide.inlineAi.rewriteDescription")},
+    {id: "polish", label: t("ide.inlineAi.taskPolish"), iconClass: "i-lucide-sparkles", description: t("ide.inlineAi.polishDescription")},
+    {id: "expand", label: t("ide.inlineAi.taskExpand"), iconClass: "i-lucide-stretch-horizontal", description: t("ide.inlineAi.expandDescription")},
+    {id: "condense", label: t("ide.inlineAi.taskCondense"), iconClass: "i-lucide-shrink", description: t("ide.inlineAi.condenseDescription")},
+    {id: "continue_after", label: t("ide.inlineAi.taskContinueAfter"), iconClass: "i-lucide-forward", description: t("ide.inlineAi.continueAfterDescription")},
+    {id: "bridge", label: t("ide.inlineAi.taskBridge"), iconClass: "i-lucide-git-compare-arrows", description: t("ide.inlineAi.bridgeDescription")},
+]);
 
-const taskDropdownItems = computed<DropdownItem[]>(() => taskOptions.map((option) => ({
+const taskDropdownItems = computed<DropdownItem[]>(() => taskOptions.value.map((option) => ({
     label: option.label,
     value: option.id,
     iconClass: option.iconClass,
@@ -58,14 +59,14 @@ const taskDropdownItems = computed<DropdownItem[]>(() => taskOptions.map((option
     rightIconClass: option.id === props.task ? "i-lucide-check" : undefined,
 })));
 
-const currentTask = computed(() => taskOptions.find((option) => option.id === props.task) ?? taskOptions[0]!);
+const currentTask = computed(() => taskOptions.value.find((option) => option.id === props.task) ?? taskOptions.value[0]!);
 const canSubmit = computed(() => props.loading || Boolean(props.modelValue.trim()) || props.references.length > 0 || Boolean(props.currentPath));
 
 /**
  * 选择 Inline AI 任务。
  */
 function selectTask(value: string): void {
-    if (taskOptions.some((option) => option.id === value)) {
+    if (taskOptions.value.some((option) => option.id === value)) {
         emit("update:task", value as InlineEditTask);
     }
 }
@@ -110,12 +111,12 @@ function referenceLabel(reference: InlineEditReference): string {
  */
 function referenceMatchLabel(reference: InlineEditReference): string {
     if (reference.match === "unique") {
-        return "已定位";
+        return t("ide.inlineAi.located");
     }
     if (reference.match === "ambiguous") {
-        return "多处匹配";
+        return t("ide.inlineAi.ambiguous");
     }
-    return "未定位";
+    return t("ide.inlineAi.notLocated");
 }
 
 watch(() => props.expanded, async (expanded) => {
@@ -155,7 +156,7 @@ onBeforeUnmount(() => {
         <div v-if="props.expanded" class="relative mx-auto w-full max-w-4xl pb-5 pt-7">
             <button
                 class="absolute left-1/2 top-7 flex h-6 w-12 -translate-x-1/2 -translate-y-full items-center justify-center rounded-t-full border border-b-0 border-[var(--prompt-border)] bg-[var(--prompt-bg)] text-[var(--text-secondary)] shadow-sm transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
-                title="收起 Inline AI"
+                :title="t('ide.inlineAi.collapse')"
                 @click="toggleExpanded"
             >
                 <span class="i-lucide-chevron-down h-3.5 w-3.5"></span>
@@ -166,7 +167,7 @@ onBeforeUnmount(() => {
                 <div v-if="props.editPreview" class="border-b border-[var(--border-color)] bg-[var(--bg-sidebar)] px-4 py-2 text-xs text-[var(--text-secondary)]">
                     <div class="mb-1 flex items-center gap-2 font-medium text-[var(--text-main)]">
                         <span class="i-lucide-file-diff h-3.5 w-3.5 text-[var(--accent-text)]"></span>
-                        <span>正在修改</span>
+                        <span>{{ t("ide.inlineAi.editing") }}</span>
                     </div>
                     <div class="line-clamp-3 whitespace-pre-wrap leading-5">{{ props.editPreview }}</div>
                 </div>
@@ -176,7 +177,7 @@ onBeforeUnmount(() => {
                     <div class="flex flex-wrap items-center gap-2">
                         <span class="inline-flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)]">
                             <span class="i-lucide-quote h-3.5 w-3.5"></span>
-                            <span>引用</span>
+                            <span>{{ t("ide.inlineAi.references") }}</span>
                         </span>
                         <button
                             v-for="(reference, index) in props.references"
@@ -192,7 +193,7 @@ onBeforeUnmount(() => {
                             <span class="shrink-0 text-[10px] text-[var(--text-muted)]">{{ referenceMatchLabel(reference) }}</span>
                         </button>
                         <span v-if="props.references.length === 0" class="text-xs text-[var(--text-muted)]">
-                            未绑定选区，AI 将根据当前文件和要求判断修改范围
+                            {{ t("ide.inlineAi.noReferenceBound") }}
                         </span>
                     </div>
                 </div>
@@ -200,7 +201,7 @@ onBeforeUnmount(() => {
                 <ReferencePlainTextEditor
                     ref="editorRef"
                     :model-value="props.modelValue"
-                    placeholder="输入编辑要求，例如：让这段更克制一点，减少解释，多用动作和环境表达情绪。"
+                    :placeholder="t('ide.inlineAi.promptPlaceholder')"
                     :min-height="64"
                     :max-height="180"
                     borderless
@@ -221,17 +222,17 @@ onBeforeUnmount(() => {
                             </button>
                         </Dropdown>
 
-                        <button class="inline-flex h-8 max-w-[12rem] items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" type="button" title="绑定 Inline AI Session" @click="emit('bind-session')">
+                        <button class="inline-flex h-8 max-w-[12rem] items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" type="button" :title="t('ide.inlineAi.bindSession')" @click="emit('bind-session')">
                             <span class="i-lucide-message-square-more h-3.5 w-3.5 text-[var(--text-muted)]"></span>
                             <span class="truncate">{{ props.sessionLabel }}</span>
                         </button>
 
-                        <button class="inline-flex h-8 max-w-[12rem] items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" type="button" title="切换模型" @click="emit('change-model')">
+                        <button class="inline-flex h-8 max-w-[12rem] items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]" type="button" :title="t('ide.inlineAi.switchModel')" @click="emit('change-model')">
                             <span class="i-lucide-cpu h-3.5 w-3.5 text-[var(--text-muted)]"></span>
                             <span class="truncate">{{ props.selectedModel }}</span>
                         </button>
 
-                        <span class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--text-secondary)]" :title="`推理强度：${props.selectedReasoning}`">
+                        <span class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--text-secondary)]" :title="t('ide.inlineAi.reasoningTitle', {reasoning: props.selectedReasoning})">
                             <span class="i-lucide-brain h-3.5 w-3.5 text-[var(--text-muted)]"></span>
                             <span>{{ props.selectedReasoning }}</span>
                         </span>
@@ -247,7 +248,7 @@ onBeforeUnmount(() => {
                             class="flex h-8 w-8 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-45"
                             :class="props.loading ? 'border-rose-500/50 bg-rose-500/10 text-rose-500' : 'border-[var(--accent-main)] bg-[var(--accent-bg)] text-[var(--accent-text)] hover:opacity-85'"
                             :disabled="!canSubmit"
-                            :title="props.loading ? '停止' : '发送给 Inline AI'"
+                            :title="props.loading ? t('ide.inlineAi.stop') : t('ide.inlineAi.send')"
                             @click="submit"
                         >
                             <span v-if="props.loading" class="i-lucide-square h-3.5 w-3.5"></span>
@@ -261,7 +262,7 @@ onBeforeUnmount(() => {
         <div v-else class="flex justify-center">
             <button
                 class="flex h-6 w-12 items-center justify-center rounded-t-full border border-b-0 border-[var(--prompt-border)] bg-[var(--prompt-bg)] text-[var(--text-secondary)] shadow-sm transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
-                title="展开 Inline AI"
+                :title="t('ide.inlineAi.expandBar')"
                 @click="toggleExpanded"
             >
                 <span class="i-lucide-sparkles h-3.5 w-3.5"></span>

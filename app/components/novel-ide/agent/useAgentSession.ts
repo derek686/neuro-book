@@ -4,6 +4,7 @@ import {
     applyRuntimeEventToMessages,
     applySessionEntryToMessages,
     deriveMessagesFromSessionSnapshot,
+    formatTimestamp,
     reconcileMessages,
     toPendingUserInputSession,
     type AgentMessage,
@@ -182,7 +183,7 @@ export function useAgentSession() {
                 type: "user",
                 content,
                 status: "done",
-                timestamp: "刚刚",
+                timestamp: formatTimestamp(Date.now()),
             },
         ]);
     };

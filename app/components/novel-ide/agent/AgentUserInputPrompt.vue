@@ -32,6 +32,7 @@ const emit = defineEmits<{
 const activeToolNodeId = ref("");
 const activeQuestionIndexValue = ref(0);
 const isCollapsed = ref(false);
+const {t} = useI18n();
 
 const activeQuestion = computed(() => {
     return props.session.questions.find((question) => question.toolNodeId === activeToolNodeId.value && question.questionIndex === activeQuestionIndexValue.value) ?? props.session.questions[0];
@@ -60,21 +61,21 @@ const isExitPlanModeApproval = computed(() => activeQuestion.value?.approvalActi
 
 const submitButtonLabel = computed(() => {
     if (!isToolApproval.value) {
-        return canSubmit.value ? "继续" : "下一条";
+        return canSubmit.value ? t("agent.userInput.continue") : t("agent.userInput.next");
     }
     if (activeAnswer.value.includes(0)) {
-        return "批准";
+        return t("agent.userInput.approve");
     }
     return isExitPlanModeApproval.value && activeAnswer.value.includes(NONE_OF_ABOVE_OPTION_INDEX)
-        ? "提交建议"
-        : "提交";
+        ? t("agent.userInput.submitSuggestion")
+        : t("agent.userInput.submit");
 });
 
-const ignoreButtonLabel = computed(() => isToolApproval.value ? "终止本轮" : "忽略");
-const noneOfAboveLabel = computed(() => isExitPlanModeApproval.value ? "追加建议" : "其他答案");
+const ignoreButtonLabel = computed(() => isToolApproval.value ? t("agent.userInput.terminateRun") : t("agent.userInput.ignore"));
+const noneOfAboveLabel = computed(() => isExitPlanModeApproval.value ? t("agent.userInput.addSuggestion") : t("agent.userInput.otherAnswer"));
 const noneOfAboveDescription = computed(() => isExitPlanModeApproval.value
-    ? "在下方输入框写下建议，Agent 会继续留在 Plan Mode 调整计划。"
-    : "在下方输入框补充你的其他答案。");
+    ? t("agent.userInput.suggestionDescription")
+    : t("agent.userInput.otherAnswerDescription"));
 
 const answeredCount = computed(() => {
     return props.session.questions.filter((question) => hasAnswer(questionKey(question.toolNodeId, question.questionIndex))).length;
@@ -287,9 +288,9 @@ defineExpose({
         <div class="flex items-center justify-between gap-3 border-b border-[var(--border-color)]/60 px-3 py-1.5">
             <div class="min-w-0">
                 <div class="flex items-center gap-2 text-[11px] font-medium text-[var(--text-muted)]">
-                    <span>{{ activeQuestion.header || (isToolApproval ? "审批" : "当前需求") }}</span>
+                    <span>{{ activeQuestion.header || (isToolApproval ? t("agent.userInput.approval") : t("agent.userInput.currentRequest")) }}</span>
                     <span class="tabular-nums">{{ activeQuestionIndex + 1 }} / {{ questionCount }}</span>
-                    <span class="tabular-nums">已答 {{ answeredCount }}</span>
+                    <span class="tabular-nums">{{ t("agent.userInput.answeredCount", {count: answeredCount}) }}</span>
                 </div>
                 <div v-if="isCollapsed" class="mt-0.5 truncate text-xs font-semibold text-[var(--text-main)]">{{ activeQuestion.question }}</div>
             </div>
@@ -297,7 +298,7 @@ defineExpose({
                 <button
                     class="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-35"
                     :disabled="isCollapsed || activeQuestionIndex === 0"
-                    title="上一题"
+                    :title="t('agent.userInput.previous')"
                     @click="switchQuestion(activeQuestionIndex - 1)"
                 >
                     <span class="i-lucide-chevron-left h-3.5 w-3.5"></span>
@@ -305,14 +306,14 @@ defineExpose({
                 <button
                     class="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-35"
                     :disabled="isCollapsed || activeQuestionIndex >= questionCount - 1"
-                    title="下一题"
+                    :title="t('agent.userInput.nextQuestion')"
                     @click="switchQuestion(activeQuestionIndex + 1)"
                 >
                     <span class="i-lucide-chevron-right h-3.5 w-3.5"></span>
                 </button>
                 <button
                     class="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)]"
-                    :title="isCollapsed ? '展开' : '收起'"
+                    :title="isCollapsed ? t('agent.userInput.expand') : t('agent.userInput.collapse')"
                     @click="isCollapsed = !isCollapsed"
                 >
                     <span :class="isCollapsed ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="h-3.5 w-3.5"></span>
@@ -372,13 +373,13 @@ defineExpose({
             </div>
 
             <div v-if="activeQuestion.options.length === 0" class="mt-2 rounded-md border border-dashed border-[var(--border-color)] bg-[var(--bg-panel)] px-2.5 py-2 text-[11px] leading-4 text-[var(--text-muted)]">
-                在下方输入框填写回答或补充说明。
+                {{ t("agent.userInput.freeAnswerHint") }}
             </div>
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-color)]/70 bg-[var(--bg-panel)]/35 px-3 py-1.5">
             <div class="min-w-0 text-xs text-[var(--text-muted)]">
-                已回答 {{ answeredCount }} / {{ questionCount }}
+                {{ t("agent.userInput.answeredProgress", {answered: answeredCount, total: questionCount}) }}
             </div>
             <div class="flex min-w-0 shrink-0 items-center gap-2">
                 <button

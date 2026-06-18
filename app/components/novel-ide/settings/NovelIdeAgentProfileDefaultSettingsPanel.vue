@@ -25,6 +25,7 @@ const emit = defineEmits<{
 const novelIdeStore = useNovelIdeStore();
 const notification = useNotification();
 const configApi = useConfigApi();
+const {t} = useI18n();
 const loading = ref(false);
 const saving = ref(false);
 const errorText = ref("");
@@ -43,9 +44,9 @@ const systemDefaultProfileKey = computed(() => {
 });
 const workspaceLabel = computed(() => {
     if (isProjectScope.value) {
-        return props.targetLabel || "当前 Project";
+        return props.targetLabel || t("settings.panels.defaultProfile.currentProject");
     }
-    return globalDefaultProfileSlot.value === "userAssets" ? "Workspace Root 用户资产默认" : "Workspace Root 小说默认";
+    return globalDefaultProfileSlot.value === "userAssets" ? t("settings.panels.defaultProfile.workspaceUserAssetsDefault") : t("settings.panels.defaultProfile.workspaceNovelDefault");
 });
 const effectiveProfileKey = computed(() => isProjectScope.value
     ? settings.value?.effectiveProfileKey ?? ""
@@ -61,8 +62,8 @@ const profileOptions = computed<SelectOption[]>(() => {
     return [
         {
             value: "",
-            label: `跟随默认 (${systemDefaultProfileKey.value})`,
-            description: "清除当前配置文件中的覆盖设置。",
+            label: t("settings.panels.defaultProfile.followDefault", {profile: systemDefaultProfileKey.value}),
+            description: t("settings.panels.defaultProfile.followDefaultDescription"),
             indicatorClass: "bg-slate-400",
         },
         ...options,
@@ -131,7 +132,7 @@ async function loadSettings(): Promise<void> {
     try {
         applySettings(await configApi.editorSnapshot(props.targetQuery));
     } catch (error) {
-        errorText.value = error instanceof Error ? error.message : "读取默认 Profile 设置失败";
+        errorText.value = error instanceof Error ? error.message : t("settings.panels.defaultProfile.loadFailed");
     } finally {
         loading.value = false;
     }
@@ -153,9 +154,9 @@ async function saveSettings(): Promise<void> {
             : await configApi.saveGlobal(buildGlobalConfigPayload(), props.targetQuery);
         applySettings(snapshot);
         emit("saved", snapshot.defaultProfileSettings.effectiveProfileKey);
-        notification.success("默认 Profile 已保存，新建 session 会使用新的默认值。");
+        notification.success(t("settings.panels.defaultProfile.saveSuccess"));
     } catch (error) {
-        errorText.value = error instanceof Error ? error.message : "保存默认 Profile 设置失败";
+        errorText.value = error instanceof Error ? error.message : t("settings.panels.defaultProfile.saveFailed");
     } finally {
         saving.value = false;
     }
@@ -182,8 +183,8 @@ defineExpose({
     <div class="space-y-4 pt-1">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="max-w-xl">
-                <h3 class="text-base font-semibold text-[var(--text-main)]">默认 Agent Profile</h3>
-                <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ workspaceLabel }}的新建 Agent session 会使用这里的默认 Profile；已有 session 不受影响。</p>
+                <h3 class="text-base font-semibold text-[var(--text-main)]">{{ t("settings.panels.defaultProfile.title") }}</h3>
+                <p class="mt-1 text-xs text-[var(--text-secondary)]">{{ t("settings.panels.defaultProfile.description", {workspace: workspaceLabel}) }}</p>
             </div>
         </div>
 
@@ -194,7 +195,7 @@ defineExpose({
 
         <div v-if="loading" class="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-panel)] shadow-sm">
             <span class="i-lucide-loader-2 h-8 w-8 animate-spin text-[var(--text-muted)]"></span>
-            <span class="text-sm text-[var(--text-secondary)]">正在读取默认 Profile 设置...</span>
+            <span class="text-sm text-[var(--text-secondary)]">{{ t("settings.panels.defaultProfile.loading") }}</span>
         </div>
 
         <div v-else class="grid gap-3">
@@ -204,18 +205,18 @@ defineExpose({
                         <span class="flex items-center justify-center w-5 h-5 rounded bg-[var(--accent-bg)] text-[var(--accent-text)]">
                             <span class="i-lucide-route h-3.5 w-3.5"></span>
                         </span>
-                        <h4 class="text-xs font-bold text-[var(--text-main)] tracking-wider">默认 Agent Profile</h4>
+                        <h4 class="text-xs font-bold text-[var(--text-main)] tracking-wider">{{ t("settings.panels.defaultProfile.title") }}</h4>
                     </div>
-                    <p class="text-xs text-[var(--text-secondary)] leading-relaxed">{{ isProjectScope ? "写入所选 Project Workspace 的 .nbook/config.json；清除覆盖后回落到 Global Config。" : "写入 Workspace Root .nbook/config.json，作为全局默认值。" }}</p>
+                    <p class="text-xs text-[var(--text-secondary)] leading-relaxed">{{ isProjectScope ? t("settings.panels.defaultProfile.projectDescription") : t("settings.panels.defaultProfile.globalDescription") }}</p>
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-2 items-end">
                     <div class="space-y-1.5">
-                        <label class="text-xs font-semibold text-[var(--text-secondary)]">默认 Agent Profile</label>
-                        <FormSelect v-model="selectedProfileKey" :options="profileOptions" placeholder="选择默认 Profile" />
+                        <label class="text-xs font-semibold text-[var(--text-secondary)]">{{ t("settings.panels.defaultProfile.title") }}</label>
+                        <FormSelect v-model="selectedProfileKey" :options="profileOptions" :placeholder="t('settings.panels.defaultProfile.selectPlaceholder')" />
                     </div>
                     <div class="space-y-1.5">
-                        <label class="text-xs font-semibold text-[var(--text-secondary)]">当前生效</label>
+                        <label class="text-xs font-semibold text-[var(--text-secondary)]">{{ t("settings.panels.defaultProfile.currentEffective") }}</label>
                         <div class="flex h-7 w-full items-center gap-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-input)] bg-opacity-30 px-2.5 text-[12px] select-all">
                             <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
                             <span class="font-mono text-[11px] font-semibold text-[var(--text-main)] truncate">{{ effectiveProfileKey || "-" }}</span>
