@@ -30,6 +30,7 @@ import type {ThinkingLevelDto} from "nbook/shared/dto/app-settings.dto";
 import type {InvokeAgentResult} from "nbook/server/agent/harness/types";
 import type {JsonValue} from "nbook/server/agent/messages/types";
 import type {InlineEditPayload} from "nbook/app/utils/inline-editor-selection";
+import {LowCodeJsonObjectSchema} from "nbook/shared/dto/low-code-form.dto";
 
 type SessionModelDraft = {
     modelKey: string | null;
@@ -901,6 +902,15 @@ const submitUserInputForm = async (payload: {
     if (pendingKey && submittingUserInputKey.value === pendingKey) {
         return;
     }
+
+    // 验证提交的 formData
+    const dataValidation = LowCodeJsonObjectSchema.safeParse(payload.data);
+    if (!dataValidation.success) {
+        console.error("submitUserInputForm: payload.data 验证失败", dataValidation.error);
+        notification.error(t("agent.chatSurface.invalidFormData"), {title: t("agent.chatSurface.submitAnswersFailed")});
+        return;
+    }
+
     try {
         submittingUserInputKey.value = pendingKey;
         await ensureActiveSessionEvents();
@@ -914,7 +924,7 @@ const submitUserInputForm = async (payload: {
             resolution: {
                 kind: "user_input",
                 toolCallId: payload.toolCallId,
-                data: payload.data,
+                data: dataValidation.data,
             } as any,
         });
         await handleInvokeResult(result);

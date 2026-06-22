@@ -3749,6 +3749,12 @@ export class NeuroAgentHarness {
             this.invocationRuntimeStates.delete(invocationId);
             this.rejectPendingClientPatches(invocationId);
         }
+        // 清理 pending form specs
+        for (const key of this.pendingFormSpecs.keys()) {
+            if (key.startsWith(`${sessionId}:`)) {
+                this.pendingFormSpecs.delete(key);
+            }
+        }
     }
 
     private async writeLifecycle(
