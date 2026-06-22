@@ -3,13 +3,14 @@ import {createTextToolResult} from "nbook/server/agent/messages/message-utils";
 import type {AgentResolution} from "nbook/server/agent/tools/types";
 
 /**
- * 查找 session 尾部未完成的审批 tool call。
+ * 查找 session 尾部未完成的审批 tool calls。
+ * 返回数组，按调用顺序排列（先出现的在前）。
  */
-export function findPendingApprovalCall(messages: Message[], approvalToolKeys: readonly string[]): {
+export function findPendingApprovalCalls(messages: Message[], approvalToolKeys: readonly string[]): Array<{
     toolCallId: string;
     toolName: string;
     args: Record<string, unknown>;
-} | null {
+}> {
     const completed = new Set(messages.filter((message) => message.role === "toolResult").map((message) => message.toolCallId));
 
     for (let index = messages.length - 1; index >= 0; index--) {
@@ -17,18 +18,33 @@ export function findPendingApprovalCall(messages: Message[], approvalToolKeys: r
         if (!message || message.role !== "assistant") {
             continue;
         }
-        const toolCall = message.content.find((block) => {
+        const pendingCalls = message.content.filter((block) => {
             return block.type === "toolCall" && approvalToolKeys.includes(block.name) && !completed.has(block.id);
         });
-        if (toolCall?.type === "toolCall") {
-            return {
-                toolCallId: toolCall.id,
-                toolName: toolCall.name,
-                args: toolCall.arguments,
-            };
+
+        if (pendingCalls.length > 0) {
+            return pendingCalls
+                .filter((block): block is Extract<typeof block, {type: "toolCall"}> => block.type === "toolCall")
+                .map((toolCall) => ({
+                    toolCallId: toolCall.id,
+                    toolName: toolCall.name,
+                    args: toolCall.arguments,
+                }));
         }
     }
-    return null;
+    return [];
+}
+
+/**
+ * 向后兼容：查找单个 pending approval call。
+ */
+export function findPendingApprovalCall(messages: Message[], approvalToolKeys: readonly string[]): {
+    toolCallId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+} | null {
+    const calls = findPendingApprovalCalls(messages, approvalToolKeys);
+    return calls[0] ?? null;
 }
 
 /**

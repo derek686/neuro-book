@@ -3,7 +3,7 @@ import {storeToRefs} from "pinia";
 import {useNovelIdeStore, type AgentWorkspaceSyncPayload} from "nbook/app/stores/novel-ide";
 import {isNovelIdeTab} from "nbook/app/components/novel-ide/mock-data";
 import type {AgentMessage, AgentToolCall} from "nbook/app/components/novel-ide/agent/agent-message";
-import {hasVisibleInvocationError, isContinuationPointMessage} from "nbook/app/components/novel-ide/agent/agent-message";
+import {hasVisibleInvocationError, isContinuationPointMessage, toPendingUserInputSession, type AgentPendingUserInputSession} from "nbook/app/components/novel-ide/agent/agent-message";
 import {applyClientVariablePatch, buildAgentClientState} from "nbook/app/components/novel-ide/agent/client-variables";
 import {useStructuredReferenceMenu} from "nbook/app/composables/useStructuredReferenceMenu";
 import {useDialog} from "nbook/app/composables/useDialog";
@@ -102,6 +102,11 @@ const running = session.running;
 const connectionStatus = session.connectionStatus;
 const runPhase = session.runPhase;
 const pendingUserInputSession = session.pendingUserInputSession;
+const pendingUserInputSessionsComputed = computed(() => {
+    const pendings = session.snapshot.value?.pendingApprovals ?? [];
+    return pendings.map((approval) => toPendingUserInputSession(approval, messages.value))
+        .filter((s): s is AgentPendingUserInputSession => s !== null);
+});
 const {confirm} = useDialog();
 const notification = useNotification();
 const {t} = useI18n();
@@ -881,7 +886,7 @@ const reconnectActiveSessionEvents = async (): Promise<void> => {
 };
 
 /**
- * 提交结构化问题答案。
+ * 提交结构化问题答案（支持单个或批量）。
  */
 const submitUserInputAnswers = async (payload: {
     assistantMessageId: string;
@@ -930,29 +935,74 @@ const submitUserInputAnswers = async (payload: {
         session.clearPendingUserInputSession();
         userInputSelectedAnswers.value = {};
         userInputNotes.value = {};
-        const result = await agentApi.invokeSession(activeSessionId.value, {
-            mode: "continue",
-            clientState: buildClientState(),
-            resolution: firstQuestion.kind === "tool_approval"
-                ? {
-                    kind: "tool_approval",
-                    toolCallId,
-                    approved: isApprovalApproved(payload.answers[0]),
-                    resultText: answers.map((answer) => answer.text).join("\n"),
-                    answers,
+
+        // 如果有多个待审批项，一次性提交所有审批
+        const allPendingSessions = pendingUserInputSessionsComputed.value;
+        if (allPendingSessions.length > 1) {
+            const resolutions = allPendingSessions.map((session) => {
+                const sessionToolCallId = session.questions[0]?.toolCallId ?? session.questions[0]?.toolNodeId;
+                const sessionFirstQuestion = session.questions[0];
+                if (!sessionToolCallId || !sessionFirstQuestion) {
+                    return null;
                 }
-                : {
-                    kind: "user_input",
-                    toolCallId,
-                    answers,
-                },
-        });
-        await handleInvokeResult(result);
-        await syncActiveSessionSnapshot();
-    } catch (error) {
-        if (!pendingUserInputSession.value && submittingUserInputKey.value === pendingKey) {
-            pendingUserInputSession.value = pendingSession;
+                // 只有第一个审批使用用户交互的答案，其余使用默认批准
+                const isFirstSession = session === pendingSession;
+                const sessionAnswers = isFirstSession
+                    ? answers
+                    : [{
+                        questionIndex: 0,
+                        text: t("agent.userInput.approve"),
+                        selectedOptionIndex: 0,
+                        selectedOptionIndexes: [0],
+                    }];
+
+                if (sessionFirstQuestion.kind === "tool_approval") {
+                    return {
+                        kind: "tool_approval" as const,
+                        toolCallId: sessionToolCallId,
+                        approved: isFirstSession ? isApprovalApproved(payload.answers[0]) : true,
+                        resultText: sessionAnswers.map((a) => a.text).join("\n"),
+                        answers: sessionAnswers,
+                    };
+                }
+                return {
+                    kind: "user_input" as const,
+                    toolCallId: sessionToolCallId,
+                    answers: sessionAnswers,
+                };
+            }).filter((r): r is NonNullable<typeof r> => r !== null);
+
+            const result = await agentApi.invokeSession(activeSessionId.value, {
+                mode: "continue",
+                clientState: buildClientState(),
+                resolutions,
+            });
+            await handleInvokeResult(result);
+            await syncActiveSessionSnapshot();
+        } else {
+            // 单个审批，保持原有逻辑
+            const result = await agentApi.invokeSession(activeSessionId.value, {
+                mode: "continue",
+                clientState: buildClientState(),
+                resolution: firstQuestion.kind === "tool_approval"
+                    ? {
+                        kind: "tool_approval",
+                        toolCallId,
+                        approved: isApprovalApproved(payload.answers[0]),
+                        resultText: answers.map((answer) => answer.text).join("\n"),
+                        answers,
+                    }
+                    : {
+                        kind: "user_input",
+                        toolCallId,
+                        answers,
+                    },
+            });
+            await handleInvokeResult(result);
+            await syncActiveSessionSnapshot();
         }
+    } catch (error) {
+        // pendingUserInputSession 现在是 computed，会自动从 session 状态恢复
         console.error("提交问题答案失败", error);
         await syncActiveSessionSnapshot();
         notifyAgentError(error, t("agent.chatSurface.submitAnswersFailed"));

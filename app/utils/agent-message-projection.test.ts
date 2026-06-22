@@ -253,7 +253,7 @@ describe("agent message projection helpers", () => {
             latestSeq: 0,
             linkedAgents: [],
             linkedByAgents: [],
-            pendingApproval: null,
+            pendingApprovals: [],
             steerQueue: [],
             followUpQueue: {
                 status: "ready",
@@ -384,7 +384,7 @@ describe("agent message projection helpers", () => {
             latestSeq: 0,
             linkedAgents: [],
             linkedByAgents: [],
-            pendingApproval: null,
+            pendingApprovals: [],
             steerQueue: [],
             followUpQueue: {
                 status: "ready",

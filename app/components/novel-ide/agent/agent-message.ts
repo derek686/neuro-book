@@ -376,7 +376,7 @@ export const deriveMessagesFromSessionSnapshot = (snapshot: AgentSessionSnapshot
     const messages: AgentMessage[] = [];
     const assistantByToolCallId = new Map<string, AgentMessage>();
     const hasActiveInvocation = Boolean(snapshot.activeInvocation);
-    const pendingToolCallId = snapshot.pendingApproval?.toolCallId ?? null;
+    const pendingToolCallId = snapshot.pendingApprovals[0]?.toolCallId ?? null;
     const assistantErrorInvocations = findAssistantErrorInvocations(snapshot.entries);
     let currentInvocationId: string | null = null;
 

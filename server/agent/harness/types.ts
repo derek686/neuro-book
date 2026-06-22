@@ -40,7 +40,10 @@ export type InvokeAgentInput = {
     payload?: JsonValue;
     /** 可选展示标题；提供时会在 invocation admission 成功后写入目标 session。 */
     title?: string;
+    /** 向后兼容：单个 resolution */
     resolution?: AgentResolution;
+    /** 批量 resolutions，用于多个 tool approval 场景 */
+    resolutions?: AgentResolution[];
     clientState?: ClientStateSnapshot;
     caller?: AgentInvokeCaller;
     block?: boolean;

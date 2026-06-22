@@ -32,7 +32,7 @@ const baseSnapshot = (lastSeq = 0): AgentSessionSnapshotDto => ({
     entries: [],
     linkedAgents: [],
     linkedByAgents: [],
-    pendingApproval: null,
+    pendingApprovals: [],
     steerQueue: [],
     followUpQueue: {
         status: "ready",
@@ -355,7 +355,7 @@ describe("useAgentSession", () => {
                     },
                     activeLeafId: null,
                     activePathRevision: null,
-                    pendingApproval: null,
+                    pendingApprovals: [],
                     steerQueue: [],
                     followUpQueue: {
                         status: "ready",
@@ -394,7 +394,7 @@ describe("useAgentSession", () => {
                     activeInvocation: null,
                     activeLeafId: "entry-1",
                     activePathRevision: "leaf-move-1",
-                    pendingApproval: null,
+                    pendingApprovals: [],
                     steerQueue: [],
                     followUpQueue: {
                         status: "ready",
@@ -440,7 +440,7 @@ describe("useAgentSession", () => {
                     activeInvocation: null,
                     activeLeafId: null,
                     activePathRevision: "leaf-move-1",
-                    pendingApproval: null,
+                    pendingApprovals: [],
                     steerQueue: [],
                     followUpQueue: {
                         status: "ready",

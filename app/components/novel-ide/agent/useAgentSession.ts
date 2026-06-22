@@ -38,12 +38,13 @@ export function useAgentSession() {
     const liveRunStatus = ref<"idle" | "running" | "waiting" | "aborting">("idle");
     const runPhase = ref<AgentRunPhase>("idle");
     const connectionStatus = ref<AgentConnectionStatus>("idle");
-    const pendingUserInputSession = ref<AgentPendingUserInputSession | null>(null);
+    const pendingUserInputSessions = ref<AgentPendingUserInputSession[]>([]);
     const eventEpoch = ref<string | null>(null);
     const lastSeq = ref(0);
     const needsSnapshot = ref(false);
     const snapshotReasons = ref<string[]>([]);
     const running = computed(() => Boolean(snapshot.value?.activeInvocation) || liveRunStatus.value === "running" || liveRunStatus.value === "aborting");
+    const pendingUserInputSession = computed(() => pendingUserInputSessions.value[0] ?? null);
     const pendingMessageUpdates: PendingMessageUpdate[] = [];
     let runtimeUpdateFrame: number | null = null;
     let runtimeUpdateFallbackTimer: ReturnType<typeof setTimeout> | null = null;
@@ -161,7 +162,7 @@ export function useAgentSession() {
         liveRunStatus.value = "idle";
         runPhase.value = "idle";
         connectionStatus.value = "idle";
-        pendingUserInputSession.value = null;
+        pendingUserInputSessions.value = [];
         eventEpoch.value = null;
         lastSeq.value = 0;
         needsSnapshot.value = false;
@@ -169,7 +170,7 @@ export function useAgentSession() {
     };
 
     const clearPendingUserInputSession = (): void => {
-        pendingUserInputSession.value = null;
+        pendingUserInputSessions.value = [];
     };
 
     /**
@@ -208,12 +209,14 @@ export function useAgentSession() {
         messages.value = activePathChanged ? nextMessages : reconcileMessages(messages.value, nextMessages);
         if (payload.activeInvocation) {
             liveRunStatus.value = payload.activeInvocation.status === "waiting" ? "waiting" : payload.activeInvocation.status;
-            runPhase.value = payload.pendingApproval ? "waiting_user" : runPhase.value === "idle" ? "model_pending" : runPhase.value;
+            runPhase.value = payload.pendingApprovals.length > 0 ? "waiting_user" : runPhase.value === "idle" ? "model_pending" : runPhase.value;
         } else {
             liveRunStatus.value = "idle";
             runPhase.value = "idle";
         }
-        pendingUserInputSession.value = toPendingUserInputSession(payload.pendingApproval, messages.value);
+        pendingUserInputSessions.value = payload.pendingApprovals
+            .map((approval) => toPendingUserInputSession(approval, messages.value))
+            .filter((session): session is AgentPendingUserInputSession => session !== null);
         eventEpoch.value = cursor.eventEpoch;
         lastSeq.value = cursor.after;
         needsSnapshot.value = false;
@@ -250,7 +253,7 @@ export function useAgentSession() {
             summarizer: state.summarizer,
             activeLeafId: state.activeLeafId,
             activePathRevision: state.activePathRevision,
-            pendingApproval: state.pendingApproval,
+            pendingApprovals: state.pendingApprovals,
             steerQueue: state.steerQueue,
             followUpQueue: state.followUpQueue,
             activeInvocation: state.activeInvocation,
@@ -263,12 +266,14 @@ export function useAgentSession() {
         };
         if (state.activeInvocation) {
             liveRunStatus.value = state.activeInvocation.status === "waiting" ? "waiting" : state.activeInvocation.status;
-            runPhase.value = state.pendingApproval ? "waiting_user" : runPhase.value === "idle" ? "model_pending" : runPhase.value;
+            runPhase.value = state.pendingApprovals.length > 0 ? "waiting_user" : runPhase.value === "idle" ? "model_pending" : runPhase.value;
         } else if (liveRunStatus.value !== "aborting") {
             liveRunStatus.value = "idle";
             runPhase.value = "idle";
         }
-        pendingUserInputSession.value = toPendingUserInputSession(state.pendingApproval, messages.value);
+        pendingUserInputSessions.value = state.pendingApprovals
+            .map((approval) => toPendingUserInputSession(approval, messages.value))
+            .filter((session): session is AgentPendingUserInputSession => session !== null);
         if (activePathChanged) {
             requestSnapshot("active_path_changed");
         }
@@ -346,9 +351,9 @@ export function useAgentSession() {
             messages.value = applySessionEntryToMessages(messages.value, payload.event.entry);
             if (payload.event.entry.type === "message" && payload.event.entry.message.role === "toolResult") {
                 const toolCallId = payload.event.entry.message.toolCallId;
-                if (pendingUserInputSession.value?.questions.some((question) => (question.toolCallId ?? question.toolNodeId) === toolCallId)) {
-                    pendingUserInputSession.value = null;
-                }
+                pendingUserInputSessions.value = pendingUserInputSessions.value.filter((session) => {
+                    return !session.questions.some((question) => (question.toolCallId ?? question.toolNodeId) === toolCallId);
+                });
             }
             if (payload.event.entry.type === "custom"
                 && (payload.event.entry.key.startsWith("agent.link.") || payload.event.entry.key.startsWith("agent.detach."))) {

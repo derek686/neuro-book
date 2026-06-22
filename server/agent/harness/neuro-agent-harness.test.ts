@@ -991,10 +991,10 @@ describe("NeuroAgentHarness", () => {
         expect(streamedToolResults).toHaveLength(1);
         expect(streamedToolResults[0]).toContain("waiting for user approval");
         expect(await harness.getSessionSnapshot(created.sessionId)).toEqual(expect.objectContaining({
-            pendingApproval: expect.objectContaining({
+            pendingApprovals: [expect.objectContaining({
                 toolCallId: "ask-barrier",
                 toolName: "request_user_input",
-            }),
+            })],
         }));
 
         const continued = await harness.invokeAgent({
@@ -5841,7 +5841,7 @@ describe("NeuroAgentHarness", () => {
         const collect = (async () => {
             for await (const event of subscription) {
                 if (event.kind === "session" && event.event.type === "session_state_changed") {
-                    pendingAfterContinue.push(event.event.state.pendingApproval?.toolCallId ?? null);
+                    pendingAfterContinue.push(event.event.state.pendingApprovals[0]?.toolCallId ?? null);
                 }
                 if (event.kind === "runtime" && event.event.type === "agent_end") {
                     break;
@@ -5917,7 +5917,7 @@ describe("NeuroAgentHarness", () => {
         });
         const snapshot = await harness.getSessionSnapshot(created.sessionId);
 
-        expect(snapshot.pendingApproval).toEqual(expect.objectContaining({
+        expect(snapshot.pendingApprovals[0]).toEqual(expect.objectContaining({
             toolCallId: "exit-preview",
             toolName: "exit_plan_mode",
             planFilePath: ".agent/plan/preview.md",
@@ -7194,7 +7194,7 @@ describe("NeuroAgentHarness", () => {
             kind: "steer",
             message: {text: "adjust"},
         }));
-        expect(snapshot.pendingApproval).toEqual({
+        expect(snapshot.pendingApprovals[0]).toEqual({
             toolCallId: "ask-snapshot",
             toolName: "request_user_input",
             args: {
@@ -8132,12 +8132,12 @@ describe("NeuroAgentHarness", () => {
             profileAvailability: "missing",
             profileIssueMessage: expect.stringContaining("未找到 agent profile"),
         }));
-        expect(parentSnapshot.pendingApproval).toEqual(expect.objectContaining({
+        expect(parentSnapshot.pendingApprovals[0]).toEqual(expect.objectContaining({
             toolCallId: "deleted-profile-wait",
             toolName: "request_user_input",
         }));
         expect(parentLiveState.summary.profileAvailability).toBe("missing");
-        expect(parentLiveState.pendingApproval).toEqual(expect.objectContaining({
+        expect(parentLiveState.pendingApprovals[0]).toEqual(expect.objectContaining({
             toolCallId: "deleted-profile-wait",
         }));
         expect(childRelations.linkedByAgents).toContainEqual(expect.objectContaining({

@@ -55,6 +55,8 @@ export const AgentResolutionDtoSchema = z.discriminatedUnion("kind", [
     }),
 ]);
 
+export type AgentResolutionDto = z.infer<typeof AgentResolutionDtoSchema>;
+
 export const AgentCreateSessionRequestDtoSchema = z.object({
     profileKey: z.string().trim().min(1, "profileKey 不能为空"),
     initial: JsonValueSchema.optional(),
@@ -70,6 +72,7 @@ export const AgentInvokeRequestDtoSchema = z.object({
     input: JsonValueSchema.optional(),
     title: z.string().trim().min(1).optional(),
     resolution: AgentResolutionDtoSchema.optional(),
+    resolutions: z.array(AgentResolutionDtoSchema).optional(),
     clientState: z.lazy(() => ClientVariablesDtoSchema).optional(),
     caller: z.never().optional(),
     block: z.boolean().optional(),
@@ -86,6 +89,13 @@ export const AgentInvokeRequestDtoSchema = z.object({
             code: "custom",
             path: ["message"],
             message: "continue 模式不能提供 message 或 input",
+        });
+    }
+    if (value.resolution && value.resolutions) {
+        ctx.addIssue({
+            code: "custom",
+            path: ["resolution"],
+            message: "不能同时提供 resolution 和 resolutions",
         });
     }
 });
@@ -286,9 +296,9 @@ export type AgentSessionLiveStateDto = {
     /** 后台标题/摘要维护状态。为空表示当前 session 未启用或尚无摘要状态。 */
     summarizer?: AgentSessionSummarizerStateDto;
     activeLeafId: string | null;
-    /** 显式 active path 重定位版本；变化时前端应拉 snapshot 重建消息投影。 */
+    /** 显式 active path 重定位版本;变化时前端应拉 snapshot 重建消息投影。 */
     activePathRevision: string | null;
-    pendingApproval: AgentPendingApprovalDto | null;
+    pendingApprovals: AgentPendingApprovalDto[];
     steerQueue: AgentQueuedMessageDto[];
     followUpQueue: AgentFollowUpQueueStateDto;
     activeInvocation: AgentActiveInvocationDto | null;
@@ -426,7 +436,7 @@ export type AgentSessionSnapshotDto = {
     entries: SessionEntry[];
     linkedAgents: AgentLinkedSessionDto[];
     linkedByAgents: AgentLinkedSessionDto[];
-    pendingApproval: AgentPendingApprovalDto | null;
+    pendingApprovals: AgentPendingApprovalDto[];
     steerQueue: AgentQueuedMessageDto[];
     followUpQueue: AgentFollowUpQueueStateDto;
     activeInvocation: AgentActiveInvocationDto | null;

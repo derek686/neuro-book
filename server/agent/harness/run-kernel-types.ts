@@ -25,10 +25,16 @@ export type RunToolBatchResult = {
     reportResultError?: string;
     sidecarResultError?: string;
     toolOverrides?: Record<string, NeuroAgentTool>;
+    /** 向后兼容：单个 waiting approval */
     waiting?: {
         toolCallId: string;
         toolName: string;
     };
+    /** 批量 waiting approvals */
+    waitingApprovals?: Array<{
+        toolCallId: string;
+        toolName: string;
+    }>;
     shouldContinue: boolean;
 };
 

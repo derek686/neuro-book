@@ -21,7 +21,7 @@ import {AGENT_FOLLOW_UP_QUEUE_STATE_KEY, AGENT_PLAN_MODE_STATE_KEY, SESSION_SUMM
 import type {InvocationErrorInfo, InvocationErrorPhase, ModelChangeEntry, NeuroSessionContext, SessionEntry, SessionEntryDraft, SessionEntryId, SessionSnapshot} from "nbook/server/agent/session/types";
 import type {AgentRuntimeHook, AgentRuntimeHookResult, RuntimeSessionFacade} from "nbook/server/agent/profiles/define-agent-runtime";
 import {SkillCatalog} from "nbook/server/agent/skills/skill-catalog";
-import {findPendingApprovalCall, resolutionToToolResult} from "nbook/server/agent/tools/approval";
+import {findPendingApprovalCall, findPendingApprovalCalls, resolutionToToolResult} from "nbook/server/agent/tools/approval";
 import {createBuiltinTools, createReportResultTool, createReportSidecarResultTool} from "nbook/server/agent";
 import {AgentToolRegistry} from "nbook/server/agent/tools/tool-registry";
 import {isAgentToolDefinition} from "nbook/server/agent/tools/types";
@@ -136,7 +136,7 @@ type SessionSummarizerJob = {
     rerunRequested: boolean;
 };
 
-type PendingApprovalLookup = ReturnType<typeof findPendingApprovalCall>;
+type PendingApprovalLookup = ReturnType<typeof findPendingApprovalCalls>;
 
 type PreparedRunProfile = {
     plan: ProfileTurnPlan;
@@ -200,7 +200,7 @@ type InvocationAdmission = {
     pendingUserMessage: Message | null;
     pendingInvocationMessage: string | undefined;
     pendingPayload: JsonValue | undefined;
-    pendingResolution: AgentResolution | null;
+    pendingResolutions: AgentResolution[];
     currentInvocation: AgentActiveInvocationDto | null;
     invocationId: string;
     abortController: AbortController;
@@ -218,7 +218,7 @@ type SessionRuntimeProjection = {
     profileIssueMessage?: string;
     baseSummary: AgentSessionSummaryDto;
     summary: AgentSessionSummaryDto;
-    pendingApproval: PendingApprovalLookup;
+    pendingApprovals: PendingApprovalLookup;
     activeInvocation: AgentActiveInvocationDto | null;
 };
 
@@ -384,7 +384,8 @@ export class NeuroAgentHarness {
         if (input.block === false) {
             throw new Error("block:false 第一版尚未实现");
         }
-        if (!input.resolution) {
+        const hasResolutions = (input.resolutions?.length ?? 0) > 0 || Boolean(input.resolution);
+        if (!hasResolutions) {
             const preflightSnapshot = await this.repo.readSession(input.sessionId);
             const preflightProfile = await this.resolveProfileRuntime(preflightSnapshot.metadata.profileKey);
             if (!preflightProfile.profile) {
@@ -404,13 +405,13 @@ export class NeuroAgentHarness {
         const pendingUserMessage = admission.pendingUserMessage;
         const pendingInvocationMessage = admission.pendingInvocationMessage;
         const pendingPayload = admission.pendingPayload;
-        const pendingResolution = admission.pendingResolution;
+        const pendingResolutions = admission.pendingResolutions;
         const invocationId = admission.invocationId;
         const abortController = admission.abortController;
         const runtimeState = admission.runtimeState;
         let errorPhase: InvocationErrorPhase = "pre_loop";
         try {
-            if (input.resolution) {
+            if (hasResolutions) {
                 snapshot = snapshot ?? await this.repo.readSession(input.sessionId);
                 const profileRuntime = await this.resolveProfileRuntime(snapshot.metadata.profileKey);
                 if (!profileRuntime.profile) {
@@ -426,7 +427,7 @@ export class NeuroAgentHarness {
                 sessionId: input.sessionId,
                 invocationId,
                 snapshot,
-                pendingResolution,
+                pendingResolutions,
                 pendingUserMessage,
                 pendingInvocationMessage,
                 pendingPayload,
@@ -587,38 +588,43 @@ export class NeuroAgentHarness {
         let pendingUserMessage: Message | null = null;
         let pendingInvocationMessage: string | undefined;
         let pendingPayload: JsonValue | undefined;
-        let pendingResolution: AgentResolution | null = null;
+        let pendingResolutions: AgentResolution[] = [];
         let currentInvocation = this.activeInvocations.get(input.sessionId) ?? null;
-        if (!currentInvocation && input.mode === "continue" && input.resolution) {
+
+        // 向后兼容：支持单个 resolution
+        const resolutions = input.resolutions ?? (input.resolution ? [input.resolution] : []);
+        const hasResolutions = resolutions.length > 0;
+
+        if (!currentInvocation && input.mode === "continue" && hasResolutions) {
             snapshot = await this.repo.readSession(input.sessionId);
             const context = this.repo.reduce(snapshot);
             const pendingMessages = context.messages.filter((message): message is Message => {
                 return message.role === "user" || message.role === "assistant" || message.role === "toolResult";
             });
-            const pendingApproval = findPendingApprovalCall(pendingMessages, await this.approvalToolKeysForSnapshot(snapshot));
+            const pendingApprovals = findPendingApprovalCalls(pendingMessages, await this.approvalToolKeysForSnapshot(snapshot));
             const baseSummary = this.repo.summary(snapshot);
-            currentInvocation = this.resolveActiveInvocation(input.sessionId, baseSummary.status, pendingApproval, snapshot);
-            if (!pendingApproval) {
+            currentInvocation = this.resolveActiveInvocation(input.sessionId, baseSummary.status, pendingApprovals, snapshot);
+            if (pendingApprovals.length === 0) {
                 throw new Error("当前 session 没有等待中的审批 tool call");
             }
             if (currentInvocation?.status !== "waiting") {
                 throw new Error("waiting_invocation_not_recoverable");
             }
         }
-        if (input.resolution && currentInvocation && currentInvocation.status !== "waiting") {
+        if (hasResolutions && currentInvocation && currentInvocation.status !== "waiting") {
             if (currentInvocation.status === "aborting") {
                 throw new Error("active_invocation_aborting");
             }
             throw new Error("waiting_invocation_not_recoverable");
         }
-        const invocationId = input.resolution && currentInvocation?.status === "waiting"
+        const invocationId = hasResolutions && currentInvocation?.status === "waiting"
             ? currentInvocation.invocationId
             : randomUUID();
         const hasInvocationInput = Boolean(input.message) || input.payload !== undefined;
         if ((input.mode === "steer" || input.mode === "followup") && !hasInvocationInput) {
             throw new Error(`${input.mode} 模式必须提供 message 或 input`);
         }
-        if (currentInvocation && !input.resolution && !input.internalQueued) {
+        if (currentInvocation && !hasResolutions && !input.internalQueued) {
             if (currentInvocation.status === "aborting") {
                 throw new Error("active_invocation_aborting");
             }
@@ -668,10 +674,10 @@ export class NeuroAgentHarness {
         if (input.mode === "continue" && (input.message || input.payload !== undefined)) {
             throw new Error("continue 模式不能提供 message 或 input");
         }
-        if (input.mode === "continue" && input.resolution) {
-            pendingResolution = input.resolution;
+        if (input.mode === "continue" && hasResolutions) {
+            pendingResolutions = resolutions;
         }
-        const activeInvocation: AgentActiveInvocationDto = currentInvocation?.status === "waiting" && input.resolution
+        const activeInvocation: AgentActiveInvocationDto = currentInvocation?.status === "waiting" && hasResolutions
             ? {
                 ...currentInvocation,
                 status: "running",
@@ -694,7 +700,7 @@ export class NeuroAgentHarness {
         });
         const runtimeState = this.invocationRuntimeStates.get(invocationId) ?? new Map<string, JsonValue>();
         this.invocationRuntimeStates.set(invocationId, runtimeState);
-        const isResume = Boolean(input.resolution && currentInvocation?.status === "waiting");
+        const isResume = Boolean(hasResolutions && currentInvocation?.status === "waiting");
         try {
             if (!isResume) {
                 await this.writeLifecycle(input.sessionId, invocationId, "start");
@@ -709,7 +715,7 @@ export class NeuroAgentHarness {
             pendingUserMessage,
             pendingInvocationMessage,
             pendingPayload,
-            pendingResolution,
+            pendingResolutions,
             currentInvocation,
             invocationId,
             abortController,
@@ -883,7 +889,7 @@ export class NeuroAgentHarness {
         sessionId: number;
         invocationId: string;
         snapshot: SessionSnapshot;
-        pendingResolution: AgentResolution | null;
+        pendingResolutions: AgentResolution[];
         pendingUserMessage: Message | null;
         pendingInvocationMessage: string | undefined;
         pendingPayload: JsonValue | undefined;
@@ -892,8 +898,8 @@ export class NeuroAgentHarness {
         caller: AgentInvokeCaller;
     }): Promise<PreparedRun> {
         let snapshot = input.snapshot;
-        if (input.pendingResolution) {
-            await this.appendResolution(snapshot, input.pendingResolution, input.invocationId);
+        if (input.pendingResolutions.length > 0) {
+            await this.appendResolutions(snapshot, input.pendingResolutions, input.invocationId);
             await this.writeLifecycle(input.sessionId, input.invocationId, "resumed");
             snapshot = await this.repo.readSession(input.sessionId);
         }
@@ -1155,7 +1161,7 @@ export class NeuroAgentHarness {
             ...(summarizer ? {summarizer} : {}),
             activeLeafId: projection.snapshot.leafId,
             activePathRevision: this.repo.activePathRevision(projection.snapshot),
-            pendingApproval: projection.pendingApproval ? await this.pendingApprovalDto(projection.snapshot, projection.pendingApproval) : null,
+            pendingApprovals: await Promise.all(projection.pendingApprovals.map((pending) => this.pendingApprovalDto(projection.snapshot, pending))),
             steerQueue: this.steerQueues.get(sessionId) ?? [],
             followUpQueue: this.followUpQueueState(sessionId, projection.context),
             activeInvocation: projection.activeInvocation,
@@ -1196,7 +1202,7 @@ export class NeuroAgentHarness {
             entries: this.repo.activePath(snapshot),
             linkedAgents: relations.linkedAgents,
             linkedByAgents: relations.linkedByAgents,
-            pendingApproval: projection.pendingApproval ? await this.pendingApprovalDto(snapshot, projection.pendingApproval) : null,
+            pendingApprovals: await Promise.all(projection.pendingApprovals.map((pending) => this.pendingApprovalDto(snapshot, pending))),
             steerQueue: this.steerQueues.get(sessionId) ?? [],
             followUpQueue,
             activeInvocation: projection.activeInvocation,
@@ -1691,9 +1697,9 @@ export class NeuroAgentHarness {
         const messages = context.messages.filter((message): message is Message => {
             return message.role === "user" || message.role === "assistant" || message.role === "toolResult";
         });
-        const pendingApproval = findPendingApprovalCall(messages, await this.approvalToolKeysForSnapshot(snapshot));
+        const pendingApprovals = findPendingApprovalCalls(messages, await this.approvalToolKeysForSnapshot(snapshot));
         const baseSummary = this.repo.summary(snapshot);
-        active = this.resolveActiveInvocation(sessionId, baseSummary.status, pendingApproval, snapshot);
+        active = this.resolveActiveInvocation(sessionId, baseSummary.status, pendingApprovals, snapshot);
         if (active?.status === "waiting") {
             this.activeInvocations.set(sessionId, active);
         }
@@ -2167,6 +2173,68 @@ export class NeuroAgentHarness {
             lastRunAt: typeof value.lastRunAt === "number" ? value.lastRunAt : undefined,
             lastError: typeof value.lastError === "string" ? value.lastError : undefined,
         };
+    }
+
+    /**
+     * 批量追加 resolutions 到 session。
+     */
+    private async appendResolutions(snapshot: SessionSnapshot, resolutions: AgentResolution[], invocationId?: string): Promise<void> {
+        const context = this.repo.reduce(snapshot);
+        const messages = context.messages.filter((message): message is Message => {
+            return message.role === "user" || message.role === "assistant" || message.role === "toolResult";
+        });
+        const pendingApprovals = findPendingApprovalCalls(messages, await this.approvalToolKeysForSnapshot(snapshot));
+
+        if (pendingApprovals.length === 0) {
+            throw new Error("当前 session 没有等待中的审批 tool call");
+        }
+
+        // 验证所有 resolution 都有对应的 pending approval
+        const pendingMap = new Map(pendingApprovals.map((p) => [p.toolCallId, p]));
+        for (const resolution of resolutions) {
+            const pending = pendingMap.get(resolution.toolCallId);
+            if (!pending) {
+                throw new Error(`resolution toolCallId ${resolution.toolCallId} 没有对应的 pending approval`);
+            }
+        }
+
+        // 验证所有 pending approvals 都有对应的 resolution
+        const resolutionMap = new Map(resolutions.map((r) => [r.toolCallId, r]));
+        for (const pending of pendingApprovals) {
+            if (!resolutionMap.has(pending.toolCallId)) {
+                throw new Error(`pending approval ${pending.toolCallId} (${pending.toolName}) 缺少对应的 resolution`);
+            }
+        }
+
+        // 按 pending approvals 顺序写入 tool results
+        const entries: AppendManySessionEntryDraft[] = [];
+        for (const pending of pendingApprovals) {
+            const resolution = resolutionMap.get(pending.toolCallId)!;
+            const storedResolution = await this.withExitPlanModePreview(snapshot, pending, resolution);
+            entries.push({
+                type: "message",
+                message: resolutionToToolResult(storedResolution, pending),
+                origin: "harness",
+            });
+        }
+
+        await this.executeWritePlan({
+            target: {sessionId: snapshot.metadata.sessionId},
+            cause: "resolution",
+            durability: "savePoint",
+            ops: [{
+                kind: "appendMany",
+                entries,
+            }],
+        }, invocationId);
+
+        // 处理 plan mode transitions
+        for (const pending of pendingApprovals) {
+            const resolution = resolutionMap.get(pending.toolCallId)!;
+            if (resolution.kind === "tool_approval" && (pending.toolName === "enter_plan_mode" || pending.toolName === "exit_plan_mode")) {
+                await this.appendPlanModeResolution(snapshot, context, pending, resolution.approved, invocationId);
+            }
+        }
     }
 
     private async appendResolution(snapshot: SessionSnapshot, resolution: AgentResolution, invocationId?: string): Promise<void> {
@@ -3902,9 +3970,9 @@ export class NeuroAgentHarness {
         const pendingMessages = context.messages.filter((message): message is Message => {
             return message.role === "user" || message.role === "assistant" || message.role === "toolResult";
         });
-        const pendingApproval = findPendingApprovalCall(pendingMessages, await this.approvalToolKeysForSnapshot(currentSnapshot, profileRuntime.profile));
+        const pendingApprovals = findPendingApprovalCalls(pendingMessages, await this.approvalToolKeysForSnapshot(currentSnapshot, profileRuntime.profile));
         const baseSummary = this.repo.summary(currentSnapshot);
-        const activeInvocation = this.resolveActiveInvocation(sessionId, baseSummary.status, pendingApproval, currentSnapshot);
+        const activeInvocation = this.resolveActiveInvocation(sessionId, baseSummary.status, pendingApprovals, currentSnapshot);
         const summary = {
             ...baseSummary,
             status: this.resolveSessionStatus(sessionId, baseSummary.status, context.archived, activeInvocation),
@@ -3919,7 +3987,7 @@ export class NeuroAgentHarness {
             ...(profileRuntime.issueMessage ? {profileIssueMessage: profileRuntime.issueMessage} : {}),
             baseSummary,
             summary,
-            pendingApproval,
+            pendingApprovals,
             activeInvocation,
         };
     }
@@ -4023,14 +4091,14 @@ export class NeuroAgentHarness {
     private resolveActiveInvocation(
         sessionId: number,
         baseStatus: AgentSessionSummaryDto["status"],
-        pendingApproval: PendingApprovalLookup,
+        pendingApprovals: PendingApprovalLookup,
         snapshot: SessionSnapshot,
     ): AgentActiveInvocationDto | null {
         const active = this.activeInvocations.get(sessionId);
         if (active) {
             return active;
         }
-        if (!pendingApproval) {
+        if (pendingApprovals.length === 0) {
             return null;
         }
         return this.hydrateWaitingInvocation(sessionId, baseStatus, snapshot);
