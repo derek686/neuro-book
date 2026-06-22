@@ -2633,6 +2633,7 @@ export class NeuroAgentHarness {
                 },
                 abortSignal: frame.abortSignal,
                 emit: (event) => this.emitFrameEvent(frame, event),
+                messages: frame.messages,
             });
             const turn: RuntimeTurn = {
                 index: snapshot.index,
@@ -2932,6 +2933,7 @@ export class NeuroAgentHarness {
         enqueueSavePointWrite?: (plan: SessionWritePlan, source: {toolCallIndex: number; toolCallId: string}) => void;
         abortSignal?: AbortSignal;
         emit: (event: AgentEvent) => Promise<void>;
+        messages?: AgentMessage[];
     }): Promise<RunToolBatchResult> {
         if (input.toolCalls.length === 0) {
             return {
@@ -3086,6 +3088,7 @@ export class NeuroAgentHarness {
         abortSignal?: AbortSignal;
         emit: (event: AgentEvent) => Promise<void>;
         toolCalls: Array<{toolCall: AgentToolCall; index: number}>;
+        messages?: AgentMessage[];
     }): Promise<{
         toolResults: ToolResultMessage[];
         reportResult?: InvokeAgentResult["reportResult"];
@@ -3165,6 +3168,7 @@ export class NeuroAgentHarness {
         abortSignal?: AbortSignal;
         emit: (event: AgentEvent) => Promise<void>;
         toolCalls: Array<{toolCall: AgentToolCall; index: number}>;
+        messages?: AgentMessage[];
     }): Promise<Array<{
         toolCall: AgentToolCall;
         index: number;
@@ -3198,6 +3202,7 @@ export class NeuroAgentHarness {
         emit: (event: AgentEvent) => Promise<void>;
         toolCall: AgentToolCall;
         index: number;
+        messages?: AgentMessage[];
     }): Promise<{
         toolCall: AgentToolCall;
         index: number;
@@ -3225,6 +3230,7 @@ export class NeuroAgentHarness {
             toolCallIndex: input.index,
             abortSignal: input.abortSignal,
             toolCall,
+            messages: input.messages,
         });
         await input.emit({
             type: "tool_execution_end",
@@ -3308,6 +3314,7 @@ export class NeuroAgentHarness {
         toolCallIndex: number;
         abortSignal?: AbortSignal;
         toolCall: AgentToolCall;
+        messages?: AgentMessage[];
     }): Promise<{
         result: AgentToolResult<unknown>;
         isError: boolean;
@@ -3365,8 +3372,29 @@ export class NeuroAgentHarness {
                     enqueueSavePoint: input.enqueueSavePointWrite,
                 }),
             };
+
+            // 从 messages 中提取 userInput（如果有 resolution）
+            let userInput: unknown = undefined;
+            if (input.messages && tool.executeWithContext) {
+                const toolResultMessage = input.messages.find((msg): msg is ToolResultMessage =>
+                    msg.role === "toolResult" && msg.toolCallId === input.toolCall.id
+                );
+                if (toolResultMessage?.details && typeof toolResultMessage.details === "object") {
+                    const details = toolResultMessage.details as {kind?: string; data?: unknown; answers?: unknown};
+
+                    // 优先从 resolution.data.userInput 提取（新格式）
+                    if (details.data && typeof details.data === "object" && "userInput" in details.data) {
+                        userInput = (details.data as {userInput: unknown}).userInput;
+                    }
+                    // 向后兼容：从 resolution.answers 提取（旧格式）
+                    else if (details.kind === "user_input" && details.answers) {
+                        userInput = details.answers;
+                    }
+                }
+            }
+
             const result = tool.executeWithContext
-                ? await tool.executeWithContext(context, input.toolCall.id, args, input.abortSignal)
+                ? await tool.executeWithContext(context, input.toolCall.id, args, userInput, input.abortSignal)
                 : await tool.execute(input.toolCall.id, args, input.abortSignal);
             return {
                 result,

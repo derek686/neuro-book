@@ -121,6 +121,7 @@ export type AgentToolDefinitionInput<TKey extends string = string> = {
     validationSchema?: TSchema;
     approvalRequired?: boolean;
     executionMode?: ToolExecutionMode;
+    userInputRequest?: NeuroAgentTool["userInputRequest"];
     prepareArguments?: NeuroAgentTool["prepareArguments"];
     execute?: NeuroAgentTool["execute"];
     executeWithContext?: NeuroAgentTool["executeWithContext"];
@@ -157,6 +158,7 @@ export function defineAgentTool<const TKey extends string>(input: AgentToolDefin
                 validationSchema: options.validationSchema ?? input.validationSchema,
                 approvalRequired: input.approvalRequired,
                 executionMode: input.executionMode,
+                userInputRequest: input.userInputRequest,
                 prepareArguments: input.prepareArguments,
                 execute: input.execute ?? (async () => {
                     throw new Error(`${input.key} 必须在 agent session context 内执行。`);

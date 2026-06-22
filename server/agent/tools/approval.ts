@@ -67,6 +67,13 @@ export function resolutionToToolResult(resolution: AgentResolution, pending: {to
         });
     }
 
+    // tool_approval 类型：优先从 data.userInput 提取用户输入，向后兼容 answers
+    const details = resolution.data && typeof resolution.data === "object" && "userInput" in resolution.data
+        ? {...resolution, data: {...resolution.data}}
+        : resolution.answers
+            ? {...resolution, data: {userInput: resolution.answers}}
+            : resolution;
+
     return createTextToolResult({
         toolCallId: pending.toolCallId,
         toolName: pending.toolName,
@@ -74,6 +81,6 @@ export function resolutionToToolResult(resolution: AgentResolution, pending: {to
             ? resolution.resultText ?? "Approved."
             : resolution.resultText ?? "Rejected.",
         isError: !resolution.approved,
-        details: resolution,
+        details,
     });
 }
