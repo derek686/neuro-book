@@ -12,7 +12,7 @@
 - [agent/](agent/)：Agent runtime、profile、TSX DSL、Import、Run Kernel、Sidecar、SSE 和默认协作协议。
 - [content/](content/)：Project Workspace 内容目录、lorebook、simulation、Subject RAG memory、information control、Markdown 方言、retrieval 和内容节点状态。
 - [agent/profile-context-memory.md](agent/profile-context-memory.md)：profile context memory、generated recommendations 和 `.nbook/context-access` 边界。
-- [plot/](plot/)：Project SQLite 剧情系统、Story / Phase / Thread / Scene / Plot 合同和 Agent 消费方式。
+- [plot/](plot/)：Project SQLite 剧情系统、Story / Phase / Thread / Scene 合同和 Agent 消费方式。Scene 是最小剧情单位，通过 World Anchor 连接 World Engine。
 - [world-engine/](world-engine/)：World Engine 世界引擎——写作模式动态世界状态 + 时间线真相源。slice / subject / instant / reduce 模型、schema、记录原则、Calendar 和 leader/writer 协作。
 - [workspace/TERMS.md](workspace/TERMS.md)：Workspace Root、Project Workspace、user-assets 和 Bundled Workspace Template 标准术语。
 - [editor/](editor/)：Markdown Studio 富文本 / 源码模式稳定规则。
