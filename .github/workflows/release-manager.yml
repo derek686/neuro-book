@@ -51,4 +51,4 @@ jobs:
           else
             dist_tag=latest
           fi
-          bun publish --cwd packages/neuro-book-manager --access public --tag "${dist_tag}"
+          npm publish --workspace packages/neuro-book-manager --access public --tag "${dist_tag}"
