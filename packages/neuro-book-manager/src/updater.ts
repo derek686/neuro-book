@@ -4,8 +4,6 @@ import {join, resolve} from "node:path";
 
 import {migrateApplication} from "#manager/app-commands";
 import {
-    rollbackProduct,
-    rollbackReleaseSource,
     stageReleaseProduct,
     stageReleaseSource,
     switchProduct,
@@ -73,8 +71,6 @@ export async function updateInstallation(options: UpdateOptions): Promise<Instal
         });
         let stagedWorktree: string | null = null;
         let gitTarget: GitUpdateTarget | null = null;
-        let sourceApplied = false;
-        let productApplied = false;
         let composeApplied = false;
         try {
             const nativeProduct = isNativeProduct(options.manifest.profile) && selected.has("product");
@@ -92,8 +88,6 @@ export async function updateInstallation(options: UpdateOptions): Promise<Instal
             const result = await prepareUpdate(options, selected, staging, backup);
             stagedWorktree = result.stagedWorktree;
             gitTarget = result.gitTarget;
-            sourceApplied = result.sourceApplied;
-            productApplied = result.productApplied;
             journal = await updateOperation(journal, "validated", {
                 nextManifest: result.manifest,
                 git: gitTarget ? {
@@ -122,11 +116,9 @@ export async function updateInstallation(options: UpdateOptions): Promise<Instal
                     backup: join(backup, "source"),
                     previousFiles: previous.provider === "release" ? previous.files : [],
                 });
-                sourceApplied = true;
             }
             if (result.stagedProduct) {
                 await switchProduct(paths.root, result.stagedProduct.outputRoot, join(backup, "product"));
-                productApplied = true;
             }
             journal = await updateOperation(journal, "switched");
             await migrateApplication(paths.root, result.manifest);
@@ -151,6 +143,16 @@ export async function updateInstallation(options: UpdateOptions): Promise<Instal
                 journal = await updateOperation(journal, "healthy", {
                     git: {...journal.git!, committed: true},
                 });
+                if (options.manifest.profile === "source-dev") {
+                    const runtime = result.manifest.components.applicationRuntime;
+                    if (runtime.provider === "container") throw new Error("Source Dev 不能使用 container Application Runtime。" );
+                    try {
+                        await installSourceDependencies(paths.root, runtimeExecutable(paths.root, runtime));
+                        journal = await updateOperation(journal, "healthy", {sourceDependenciesInstalled: true});
+                    } catch (error) {
+                        throw new Error(`Source Dev 已 fast-forward 到 ${gitTarget.targetRevision}，但依赖安装失败。Operation journal 已保留；修复网络或 lockfile 问题后重新执行 update。\n${String(error)}`);
+                    }
+                }
             }
             await writeManagerWrapper(paths.root, result.manifest.components.manager, result.manifest.components.managerRuntime);
             await writeInstallationManifest(paths.manifest, result.manifest);
@@ -160,16 +162,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Instal
             return result.manifest;
         } catch (error) {
             if (stagedWorktree) await removeStagedWorktree(paths.root, stagedWorktree).catch(() => undefined);
-            if (productApplied) await rollbackProduct(paths.root, join(backup, "product")).catch(() => undefined);
-            if (sourceApplied && options.manifest.components.source.provider === "release" && journal.nextManifest?.components.source.provider === "release") {
-                await rollbackReleaseSource(
-                    paths.root,
-                    join(backup, "source"),
-                    options.manifest.components.source.files,
-                    journal.nextManifest.components.source.files,
-                ).catch(() => undefined);
-            }
-            await rollbackOperation(journal).catch(() => undefined);
+            if (!journal.git?.committed) await rollbackOperation(journal).catch(() => undefined);
             if (composeApplied && (options.manifest.profile === "ghcr" || options.manifest.profile === "source-docker")) {
                 const stateRoot = resolve(paths.root, options.manifest.stateRoot);
                 await startDocker(paths.root, stateRoot, options.manifest.profile).catch(() => undefined);
@@ -192,8 +185,6 @@ async function prepareUpdate(
     manifest: InstallationManifest;
     stagedWorktree: string | null;
     gitTarget: GitUpdateTarget | null;
-    sourceApplied: boolean;
-    productApplied: boolean;
     stagedSource: StagedReleaseSource | null;
     stagedProduct: StagedProduct | null;
     stagedCompose: string | null;
@@ -217,8 +208,6 @@ async function prepareUpdate(
     let sourceRevision = options.manifest.sourceRevision;
     let gitTarget: GitUpdateTarget | null = null;
     let stagedWorktree: string | null = null;
-    let sourceApplied = false;
-    let productApplied = false;
     let stagedSource: StagedReleaseSource | null = null;
     let stagedProduct: StagedProduct | null = null;
     let stagedCompose: string | null = null;
@@ -336,7 +325,7 @@ async function prepareUpdate(
             layoutPath: finalCompose,
         });
     }
-    return {manifest: next, stagedWorktree, gitTarget, sourceApplied, productApplied, stagedSource, stagedProduct, stagedCompose};
+    return {manifest: next, stagedWorktree, gitTarget, stagedSource, stagedProduct, stagedCompose};
 }
 
 function defaultComponents(profile: InstallationManifest["profile"]): ComponentId[] {

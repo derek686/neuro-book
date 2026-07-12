@@ -219,6 +219,8 @@ export type OperationJournal = {
         targetRevision: string;
         committed: boolean;
     };
+    /** Source Dev Git 已提交后，主 checkout 的 frozen install 是否完成。 */
+    sourceDependenciesInstalled?: boolean;
     databaseBackup?: string;
     databasePath?: string;
     previousCompose?: string;

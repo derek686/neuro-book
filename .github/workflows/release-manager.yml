@@ -52,3 +52,9 @@ jobs:
             dist_tag=latest
           fi
           npm publish --workspace packages/neuro-book-manager --access public --tag "${dist_tag}"
+          if [[ "${dist_tag}" == "canary" ]]; then
+            published_latest="$(npm view @notnotype/neuro-book-manager dist-tags.latest --json 2>/dev/null | tr -d '"' || true)"
+            if [[ "${published_latest}" == "${package_version}" ]]; then
+              npm dist-tag rm @notnotype/neuro-book-manager latest
+            fi
+          fi

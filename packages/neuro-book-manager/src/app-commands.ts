@@ -19,7 +19,7 @@ export async function startApplication(root: string, manifest: InstallationManif
     }
     const env = await applicationEnvironment(root, stateRoot, manifest.profile === "source-dev");
     if (manifest.profile === "source-dev") {
-        await run("bun", ["run", "dev"], {cwd: root, env});
+        await run(resolveBun(root, manifest), ["run", "dev"], {cwd: root, env});
         return;
     }
     const entry = join(root, ".output", "server", "scripts", "deploy", "product-start.mjs");

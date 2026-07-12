@@ -26,6 +26,8 @@ const runtimePackageSeeds = [
     "get-tsconfig",
     "h3",
     "picocolors",
+    "pinyin-pro",
+    "proper-lockfile",
     "sisteransi",
     "sqlite-vec",
     "typebox",
@@ -478,7 +480,7 @@ async function isRuntimePackageCurrent(source, target) {
 async function copyDirectory(source, target) {
     const sourceStat = await stat(source);
     if (!sourceStat.isDirectory() || process.platform !== "win32") {
-        await cp(source, target, {recursive: true});
+        await cp(source, target, {recursive: true, dereference: true});
         return;
     }
     await mkdir(target, {recursive: true});

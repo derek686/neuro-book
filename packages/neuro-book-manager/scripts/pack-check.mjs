@@ -24,6 +24,12 @@ try {
         join(temporaryRoot, "node_modules", "@notnotype", "neuro-book-manager", "dist", "neuro-book.mjs"),
         "--version",
     ], temporaryRoot);
+    await run([
+        "bun",
+        join(temporaryRoot, "node_modules", "@notnotype", "neuro-book-manager", "dist", "neuro-book.mjs"),
+        "status",
+        "--help",
+    ], temporaryRoot);
 } finally {
     await rm(temporaryRoot, {recursive: true, force: true});
 }

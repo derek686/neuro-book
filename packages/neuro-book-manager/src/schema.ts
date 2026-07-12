@@ -170,6 +170,7 @@ export const OperationJournalSchema = Type.Object({
         targetRevision: RevisionSchema,
         committed: Type.Boolean(),
     }, {additionalProperties: false})),
+    sourceDependenciesInstalled: Type.Optional(Type.Boolean()),
     databaseBackup: Type.Optional(Type.String({minLength: 1})),
     databasePath: Type.Optional(Type.String({minLength: 1})),
     previousCompose: Type.Optional(Type.String({minLength: 1})),

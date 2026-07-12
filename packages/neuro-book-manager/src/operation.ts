@@ -5,7 +5,8 @@ import {rollbackProduct, rollbackReleaseSource} from "#manager/component";
 import {ensureDirectory, pathExists, readJson, removePath, safeTarget, writeJsonAtomic} from "#manager/files";
 import {writeInstallationManifest} from "#manager/manifest-store";
 import {installationPaths} from "#manager/paths";
-import {writeManagerWrapper} from "#manager/runtime";
+import {installSourceDependencies} from "#manager/product";
+import {runtimeExecutable, writeManagerWrapper} from "#manager/runtime";
 import {parseOperationJournal} from "#manager/schema";
 import type {InstallationManifest, OperationJournal, OperationPhase} from "#manager/types";
 
@@ -42,6 +43,12 @@ export async function recoverInterruptedOperations(root: string): Promise<void> 
         if (journal.root !== resolve(root)) throw new Error(`Operation journal 的 Installation Root 不匹配：${path}`);
         if (journal.phase === "committed") continue;
         if (journal.git?.committed && journal.nextManifest) {
+            if (journal.nextManifest.profile === "source-dev" && !journal.sourceDependenciesInstalled) {
+                const runtime = journal.nextManifest.components.applicationRuntime;
+                if (runtime.provider === "container") throw new Error("Source Dev 不能使用 container Application Runtime。" );
+                await installSourceDependencies(root, runtimeExecutable(root, runtime));
+                await updateOperation(journal, journal.phase, {sourceDependenciesInstalled: true});
+            }
             await writeManagerWrapper(root, journal.nextManifest.components.manager, journal.nextManifest.components.managerRuntime);
             await writeInstallationManifest(paths.manifest, journal.nextManifest);
             await commitOperation(journal);

@@ -13,7 +13,11 @@
 - Product build 支持 `NEURO_BOOK_OUTPUT_DIR` staging，源码更新与 Product 切换解耦；Product system profiles 会在 Nitro vendor 完成后以 Product 模式重新编译，确保无根 `node_modules` 时仍能加载。
 - Source Docker 改为 Dockerfile 多阶段容器内安装与构建；GHCR 安装不再 clone 宿主源码，而是使用 Release Manifest 固定镜像 digest。
 - Release 新增 Source、Windows/Linux Product、Windows Portable、统一 `release-manifest.json` 和 `SHA256SUMS`；Manager 使用独立 `manager-v*` tag 与 npm stable/canary 发布流程。
-- 本轮已通过完整应用与 Manager typecheck、23 项 Manager 测试、Pi/runtime/harness 聚焦组合 8 files / 229 tests、Config/model settings/shared DTO 138 tests、npm tarball 空目录审计、全新 Nuxt/Product build、无根 `node_modules` 的 migration/admin/profile/variable/workspace/HTTP smoke、Windows Portable 真实组装，以及 Release/Portable 脚本 bundle 和 workflow YAML 校验。本机没有 Docker，Linux/Docker verify jobs 尚未实际运行；真实 Provider 与浏览器验收未自动执行。
+- 首次应用 canary 发布后修复了三项真实部署问题：应用直接使用的 `h3` 现在显式声明；Product vendor 不再保留指向构建机的 Bun package symlink；Prisma CLI 会把相对 SQLite URL 基于 State Root 转为绝对路径。Windows/Linux Product CI 与 Docker/Manager Source Product 统一使用 hoisted linker合同。
+- 紧急发布补丁进一步修复 Product 更新失败时重复回滚可能删除已恢复 `.output` 的问题；回滚所有权现在只属于 Operation Journal。Source Dev 启动使用 Manifest 中的 Application Runtime，更新完成后执行 frozen依赖安装，失败时保留可恢复journal。
+- Release资产先作为候选Actions artifact完成Linux/Windows验证，只有验证全绿后才把正式 `release-manifest.json` 和校验文件上传到GitHub Release，避免失败Release被Manager识别为可安装版本。Stage 0每次复用缓存Bun都会校验固定官方checksum和版本，损坏缓存会重新下载。
+- Manager正确入口是 `bunx --bun @notnotype/neuro-book-manager@canary <command>`；`bunx run @notnotype/neuro-book-manager` 会被Bun按本地脚本或路径解析，不能启动Manager。
+- 本轮已通过完整应用与 Manager typecheck、23 项 Manager 测试、Pi/runtime/harness 聚焦组合 8 files / 229 tests、Config/model settings/shared DTO 138 tests、npm tarball空目录审计、Windows Portable真实组装，以及 Release/Portable脚本 bundle和 workflow YAML校验。SSH Arch 进一步通过 Bun 1.3.14 Linux Product build、无根 `node_modules` migration/start/HTTP、Source Docker容器内 build/start和公开 GHCR digest运行 smoke；新的完整 Release assemble/verify与浏览器验收尚未执行。
 
 ## 0.7.2-canary - 2026-07-11
 

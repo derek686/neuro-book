@@ -1,6 +1,6 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中。Manifest v2、双 Runtime、统一 Operation Journal、Stage 0、PortableGit/bash、Product 隔离和 Release verify 门禁已完成本地实现与 Windows 验证；公开 npm canary、完整 GitHub Release 资产和 Linux/Docker smoke 尚未实际发布运行，因此 Task 105 不归档。
+> 当前状态：实现中。Manager canary 已公开发布；Manifest v2、双 Runtime、统一 Operation Journal、Stage 0、PortableGit/bash和Product隔离已完成，SSH Arch 已通过 Linux Product Bun、Source Docker和公开 GHCR runtime smoke。新的完整 GitHub Release资产、公开 verify、Manager GHCR回滚和Windows Portable交互终验尚未完成，因此 Task 105 不归档。
 
 ## Relative documents refs
 
@@ -321,11 +321,14 @@ uninstall
 - 首次 Manager canary CI 暴露 `paths.test.ts` 写死 Windows 盘符，Linux runner 会把它解析为相对路径；测试已改用当前平台的 `resolve/join` 表达同一目录合同，本地 Manager 23 项测试复跑通过。
 - 第二次 Manager canary CI 的验证已全绿，但 `bun publish` 未消费 `actions/setup-node` 生成的 npm 认证配置；workflow 已切换到标准 `npm publish --workspace`，继续复用 `NODE_AUTH_TOKEN` 和 npm registry 配置。
 - 第三次 Manager canary CI 已进入 npm publish，registry 因 token 未启用 bypass 2FA 返回 403；同时 npm 严格校验会移除带 `./` 前缀的 bin 路径，包元数据已改为 `dist/neuro-book.mjs`。继续发布前需要更新具备 package write 权限且允许绕过 2FA 的 granular token。
+- Manager `0.1.0-canary.4` 已公开发布并可从 npm `canary` 安装。npm 首次发布同时创建了指向 prerelease 的 `latest`；Manager workflow 已增加保护，仅当 canary 发布后 `latest` 恰好指向本次 prerelease 时删除该 tag，stable 发布仍正常写入 `latest`。
+- 应用 canary run `29185683743` 的 GHCR 与 Source job 成功，但 Windows/Linux Product 都因源码直接导入却未声明 `h3` 而失败，assemble/verify 随后跳过。根依赖已补 `h3 ^1.15.5`，Product CI 明确统一 hoisted linker；Nitro vendor 复制会解引用 Bun package symlink，并补齐 Product 动态源码所需的 `proper-lockfile`、`pinyin-pro` seeds。
+- SSH Arch 实机验证通过：Bun 1.3.14 hoisted 干净安装与 Linux Product build、移走根 `node_modules` 后 migration/start/HTTP、Source Docker 容器内 build/start、公开 GHCR digest pull/revision label/migration/HTTP。Prisma CLI 相对 SQLite URL 曾错误落到 Application Root，现已规范化为 State Root 绝对 URL并增加聚焦测试。
 
 当前未完成的环境级验收：
 
-- `NPM_TOKEN` 尚未配置，`@notnotype/neuro-book-manager` canary 尚未公开发布。
-- 当前 Windows 环境没有 Docker，Source Docker、GHCR digest 回滚和 Linux x64 glibc Product Bun 只能由新增 Release CI verify jobs 验证。
+- Manager canary 已公开发布；仍需把 npm 当前误指 prerelease 的 `latest` dist-tag 清理，并在稳定版发布时重新建立正确 `latest`。
+- SSH Arch 已通过 Linux Product Bun、Source Docker 和公开 GHCR 镜像运行 smoke；仍需新应用 canary 完成 assemble/公开资产 verify，并通过 Manager GHCR 无宿主 checkout 安装与 digest 回滚终验。
 - Windows Portable 尚未完成交互式 start → 浏览器 → create-admin → restart → update → data 保留终验；本轮不自动执行浏览器验收。
 
 ## Implementation Walkthrough
@@ -372,8 +375,24 @@ uninstall
 - Manager Host Runtime 与 Application Runtime 分离。Stage 0 把 Bun 路径、版本、来源和 SHA256 传给 Manager，Manager 复验后复制到版本目录；所有 mutating Manager 命令会接管当前 bundle并刷新稳定 wrapper。
 - 安装和更新统一接入持久化 Operation Journal。Release Source、Product 和 Compose 明确拆成 stage/validate/switch，Source Product 使用 detached worktree，Git fast-forward 位于 migration/health 之后；原生更新增加端口检查、SQLite WAL checkpoint/备份与 HTTP 版本健康检查。
 - Windows Portable 切到 PortableGit，真实执行 Bun/rg/Git/bash 版本门禁；创建管理员后启用 `data/config.yaml` 鉴权并提示重启，启动入口在服务健康后打开浏览器且保持前台窗口。
-- Release resolver 会跳过未装配的新 Release，并交叉验证 tag/channel/asset URL/revision/GHCR digest。Release workflow 新增 Linux/Windows verify jobs，但公开 npm/GitHub/GHCR 资产尚未产生，不能把“workflow 已写”记录成“发布已通过”。
-- 实际计划差异：本地 Windows 没有 Docker，因此 Dockerfile 和 workflow 只完成静态/bundle/YAML 门禁；Docker 构建、GHCR 回滚和 Linux smoke 必须等待 CI。Bun 1.3.14 在 Windows workspace `bun add` 后两次留下不完整 hoisted 链接，本轮通过停服、完整删除 `node_modules` 和 frozen hoisted 重装恢复，未用显式添加缺失包掩盖问题。
+- Release resolver 会跳过未装配的新 Release，并交叉验证 tag/channel/asset URL/revision/GHCR digest。首次公开 canary 已产生 npm Manager、Source和GHCR，但Product失败导致Release未装配；不能把部分资产发布记录成完整发布通过。
+- 实际计划差异：本地 Windows 没有 Docker，但本轮改用 SSH Arch完成Linux Product Bun、Source Docker和公开GHCR runtime smoke；GHCR rollback与最终公开资产verify仍必须等待修复后的完整Release。Bun 1.3.14 在Windows workspace `bun add` 后两次留下不完整hoisted链接，本轮通过完整 frozen hoisted重装恢复，未用显式添加缺失包掩盖问题。
+
+### 2026-07-12：首次应用 Release CI 与 Arch Linux 实机修复
+
+- 首次应用 canary 的 GHCR 和 Source 发布成功，Windows/Linux Product 在 `prepare-system-assets` 阶段同时报告缺少 `h3`。确认应用源码直接消费 `h3`，不能依赖 Nuxt/Nitro 的传递依赖，因此补为根直接依赖。
+- Product vendor 原先在 Linux 保留 Bun package symlink，生成的 `.output/server/node_modules` 会指回构建机；现改为复制实体文件，保证移走根 `node_modules` 后 Product 仍独立运行。
+- Product runtime 后处理明确以 hoisted linker 为构建合同。Dockerfile、Source Product Manager 路径和 Windows/Linux Product CI 使用同一 linker；不为 isolated linker 重建完整嵌套包管理器布局。
+- Arch 实机暴露 Prisma migration 仍按 cwd 解释相对 SQLite URL。`preparePrismaEnv` 现在把相对 `file:` URL 基于 State Root 转为绝对路径后再交给 Prisma，数据库不再错误写入 Application Root。
+- 实际结果与计划差异：Linux Product Bun、Source Docker 和公开 GHCR runtime smoke 已提前通过 SSH Arch 实机完成；完整 Release assemble、公开 Product/Portable 资产和 Manager GHCR rollback 仍需新的 canary workflow 终验。
+
+### 2026-07-12：紧急 Patch 发布安全收口
+
+- 审查发现 Product update catch 先直接恢复 Product，随后 Operation Journal 再次恢复，第二次会删除刚恢复的旧 `.output`；现删除调用方重复回滚，Product/Source/SQLite/Compose恢复只由journal负责。
+- Source Dev不再硬编码系统`bun`；启动使用Application Runtime。Git fast-forward后在主checkout执行frozen hoisted install，失败会保留journal，下次mutating command先重试依赖安装，不自动reset Git。
+- Release assemble只上传候选Actions artifact。Linux/Windows verify成功后，最终publish job才上传正式Manifest、SHA256和应用资产；Resolver仍以正式Manifest作为完整Release标志。
+- Windows/POSIX Stage 0固定Bun 1.3.14官方archive与executable checksum，每次复用缓存时同时校验checksum和版本，损坏缓存会整版本重建。
+- npm入口文档明确禁止`bunx run @notnotype/neuro-book-manager`，标准形式保持`bunx --bun @notnotype/neuro-book-manager@<tag> <command>`；该错误发生在Manager启动前，只能通过正确入口和发布smoke防止复发。
 
 ## TODO / Follow-ups
 
@@ -386,7 +405,7 @@ uninstall
 - [x] 删除旧部署入口并同步当前部署文档。
 - [x] 停止现有服务后重建根 `node_modules`，完成全新 Product build和无根 `node_modules` Product 隔离运行。
 - [ ] 使用本轮新 `.output` 完成 Windows Portable start/create-admin/update/data 保留 smoke。
-- [ ] 在 Linux CI/runner 完成 Product Bun、Source Docker 容器内 build 和 GHCR 无宿主 checkout smoke。
+- [ ] Linux Product Bun、Source Docker 容器内 build 和公开 GHCR runtime smoke 已在 SSH Arch 通过；仍需新 Release 的公开资产 verify、Manager GHCR 无宿主 checkout安装和 digest 回滚。
 - [ ] 增加下载中断、checksum、manifest mismatch、migration、文件占用和健康检查失败的完整故障注入矩阵。
 - [x] 实现统一 installation Operation Journal，覆盖 Product、Release Source、Compose、数据库、created paths 与 Git commit point 恢复。
-- [ ] 首次真实发布前配置 GitHub `NPM_TOKEN`，按 Manager canary → NeuroBook canary 顺序发布。
+- [x] 配置 GitHub `NPM_TOKEN` 并公开发布 Manager canary；应用 canary 已触发但 Product jobs失败，需发布修复后的新 canary完成闭环。
