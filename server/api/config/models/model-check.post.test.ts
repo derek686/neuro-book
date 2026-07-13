@@ -49,6 +49,7 @@ function createProviderDraft() {
         id: "custom",
         name: "Custom",
         api: "openai-completions",
+        discovery: {adapter: "none", endpointPath: null},
         options: {
             apiKey: "",
             baseURL: "https://example.com/v1",
@@ -64,15 +65,15 @@ function createModelDraft() {
         name: "Draft",
         id: "draft-model",
         group: null,
-        provider: null,
-        api: null,
-        baseUrl: null,
-        reasoning: null,
-        input: null,
-        maxTokens: null,
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        maxTokens: 1024,
         cost: null,
         compat: null,
-        contextWindowTokens: null,
+        headers: null,
+        thinkingLevelMap: null,
+        contextWindowTokens: 8192,
     };
 }
 

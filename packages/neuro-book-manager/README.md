@@ -2,6 +2,18 @@
 
 NeuroBook 的安装、更新、实例、Runtime 与工具链管理器。
 
+没有安装Bun时，可以先通过平台Stage 0进入同一个安装向导：
+
+```powershell
+irm https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.sh | sh
+```
+
+Linux Stage 0支持x64 glibc，并依赖`curl`、`unzip`和`sha256sum`。Windows普通用户也可以直接从GitHub Release下载`neuro-book-windows-x64.zip`解压使用。
+
 直接运行且不传参数，会先检测当前目录：受管实例进入管理菜单，未接管的NeuroBook Git checkout进入接管菜单，普通目录进入部署菜单：
 
 ```bash
@@ -13,6 +25,8 @@ bunx --bun @notnotype/neuro-book-manager@canary
 ```bash
 bunx --bun @notnotype/neuro-book-manager@canary install --profile ghcr --yes
 ```
+
+六种Profile分别是：Windows解压/托管运行时使用`windows-portable`；Linux服务器预构建镜像使用`ghcr`；无Docker的预构建Product使用`product-bun`；开发使用`source-dev`；本机源码生产构建使用`source-product`；容器内源码构建使用`source-docker`。
 
 安装成功后，实例会注册到 `~/.neuro-book-manager/config.json`。该文件只保存用户偏好、默认实例和实例目录索引；每个实例的真实部署状态仍由其 `.deploy/installation.json` 管理。
 

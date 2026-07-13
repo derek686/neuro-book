@@ -469,6 +469,18 @@ uninstall
 - 公开发布检查确认`0.7.5`没有形成GitHub Release。失败run `29215886890`的Source、Linux Product、Windows Product/Portable和GHCR job实际均成功，assemble因无筛选下载把Buildx自动`.dockerbuild` artifacts一起合并而失败。workflow现按名称分别下载`source`、`product-linux`和`product-windows`，但仍需新canary发布才能验证最终assemble/verify/publish和A→B。
 - TUI接管候选当前默认使用Source Dev；完整Profile选择仍由`neuro-book adopt`的Clack入口承担，避免在blessed中复制第二套复杂安装向导。
 
+### 2026-07-13：部署入口、Portable Launcher与Release verify收口
+
+- 公开用户路径重新分流：Windows普通用户明确下载`neuro-book-windows-x64.zip`，高级用户通过PowerShell Stage 0或bunx进入Manager；Linux不再单列“服务器/Docker”入口，所有部署统一进入Manager，并完整解释六种Profile。
+- `install.ps1`、`install.cmd`和`install.sh`成为独立Release候选与正式资产，统一进入`SHA256SUMS`。Release verifier严格拒绝Stage 0脚本缺失、额外checksum条目或文件被篡改，Release Manifest schema保持不变。
+- Portable的CMD/PowerShell Start、Update和Create Admin入口迁入Manager唯一Launcher Module。六个脚本只显式传递`--root`并调用Manager命令，安装器与Portable打包器不再复制模板；退出码由CMD/PowerShell完整透传。
+- Release run `29229409817`确认Windows Product、Portable和四个托管可执行程序均正常。失败根因是verify job从Portable外部目录直接调用wrapper且未传`--root`，Manager按当前目录查找实例后输出Clack ANSI错误，随后被`ConvertFrom-Json`误判。CI现先检查退出码，再解析JSON，并以外部cwd加显式root验证跨目录合同。
+
+### 实际结果与计划差异
+
+- 没有把Stage 0脚本加入Release Manifest。它们是用户引导资产，不是Manager需要解析或更新的应用组件；只进入GitHub Release与`SHA256SUMS`可以保持协议边界清晰。
+- 没有修改Manager的当前目录发现规则来迎合CI。跨目录调用本来就应使用公开`--root`接口，修复验证命令比让wrapper隐式改变cwd更符合多实例合同。
+
 ## TODO / Follow-ups
 
 - [x] Windows Portable 使用 `data/` State Root，不使用 junction。

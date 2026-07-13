@@ -6,7 +6,6 @@ import type {
     ConfiguredAgentProfileDto,
     ConfiguredModelDto,
     DiscoverProviderModelsResponseDto,
-    DiscoveredProviderModelDto,
     EnabledModelOptionDto,
     ModelProviderDraftDto,
     ModelSettingsDto,
@@ -14,9 +13,7 @@ import type {
     UpdateModelSettingsRequestDto,
 } from "nbook/shared/dto/app-settings.dto";
 import {ThinkingLevelSchema} from "nbook/shared/dto/app-settings.dto";
-import type {Api, KnownProvider, Model, Models} from "@earendil-works/pi-ai";
-import {getBuiltinModels, getBuiltinProviders} from "@earendil-works/pi-ai/providers/all";
-import type {JsonValue} from "nbook/server/agent/messages/types";
+import type {Api, Model, Models} from "@earendil-works/pi-ai";
 import {createUserMessage} from "nbook/server/agent/messages/message-utils";
 import type {
     AgentProfileConfig,
@@ -26,11 +23,12 @@ import type {
     ModelProviderOptionsConfig,
     ModelSettingsConfig,
 } from "nbook/server/config/types";
-import {ProxyAgent} from "undici";
-import {isCustomPiRuntimeFromConfig, resolvePiModelsFromConfig} from "nbook/server/agent/harness/pi-runtime-resolver";
+import {resolvePiModelsFromConfig} from "nbook/server/agent/harness/pi-runtime-resolver";
 import {mergePiRequestHeaders, parsePiSimpleRequestOptions, piRequestAuthOptions} from "nbook/server/agent/harness/pi-request-options";
 import {tracedStreamSimple} from "nbook/server/agent/observability/traced-provider";
 import {providerErrorText, sanitizeProviderErrorMessage} from "nbook/server/agent/observability/provider-error-sanitizer";
+import {resolvePiModelMetadata} from "nbook/server/agent/harness/pi-model-metadata";
+import {discoverProviderModelMetadata} from "nbook/server/models/discovery";
 
 type ResolvedDefaultModel = {
     providerId: string;
@@ -42,19 +40,6 @@ type ResolvedContextWindow = {
     tokens: number | null;
     source: "manual" | "unknown";
 };
-type PiModelInput = Model<any>["input"][number];
-type ConfigModelInput = "text" | "image";
-
-type OpenAIModelsResponse = {
-    data?: Array<{
-        id?: unknown;
-    }>;
-};
-
-type ProviderFetchInit = RequestInit & {
-    dispatcher?: ProxyAgent;
-};
-
 type ModelHealthCheckOptions = {
     signal?: AbortSignal;
     /** 可注入与生产一致的 Pi runtime resolver；调用方通常使用默认实现。 */
@@ -66,10 +51,7 @@ export type AgentProfileSettingDefinition = {
     name: string;
 };
 
-const DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS = 30_000;
 const DEFAULT_MODEL_SMOKE_TIMEOUT_MS = 30_000;
-const DEFAULT_CONTEXT_WINDOW = 256_000;
-const DEFAULT_MAX_TOKENS = 256_000;
 export const MODEL_SMOKE_CHECK_PROMPTS = [
     "随便想一个问题，然后用一句话自己回答。",
     "用一句话解释一个常见自然现象。",
@@ -77,10 +59,6 @@ export const MODEL_SMOKE_CHECK_PROMPTS = [
     "用一句话总结今天适合做的一件小事。",
     "提出一个简单判断题，并直接给出答案。",
 ] as const;
-const XIAOMI_TOKEN_PLAN_COMPAT: NonNullable<Model<"openai-completions">["compat"]> = {
-    supportsDeveloperRole: false,
-    maxTokensField: "max_tokens",
-};
 
 /**
  * 生成 `providerId/modelId` 形式的模型 key。
@@ -130,13 +108,14 @@ export function resolveModelContextWindow(model: Pick<ConfiguredModelConfig, "co
  * 把 DTO 请求体转成运行时配置结构。
  */
 export function convertModelSettingsRequestToConfig(request: UpdateModelSettingsRequestDto): ModelSettingsConfig {
-    return {
+    const config: ModelSettingsConfig = {
         defaultModelKey: request.defaultModelKey,
         providers: Object.fromEntries(
             request.providers.map((provider) => [provider.id, {
                 name: provider.name,
                 enabled: provider.enabled,
                 api: provider.api,
+                discovery: provider.discovery,
                 options: {
                     apiKey: provider.options.apiKey.trim(),
                     baseURL: provider.options.baseURL.trim(),
@@ -150,9 +129,7 @@ export function convertModelSettingsRequestToConfig(request: UpdateModelSettings
                         id: model.id.trim(),
                         group: model.group?.trim() ? model.group.trim() : null,
                         enabled: model.enabled,
-                        provider: model.provider,
                         api: model.api,
-                        baseUrl: model.baseUrl,
                         reasoning: model.reasoning,
                         input: model.input,
                         maxTokens: model.maxTokens,
@@ -163,12 +140,25 @@ export function convertModelSettingsRequestToConfig(request: UpdateModelSettings
                             }
                             : null,
                         compat: model.compat,
+                        headers: model.headers,
+                        thinkingLevelMap: model.thinkingLevelMap,
                         contextWindowTokens: model.contextWindowTokens,
                     }]),
                 ),
             }]),
         ),
     };
+    for (const [providerId, provider] of Object.entries(config.providers)) {
+        if (!provider.enabled) {
+            continue;
+        }
+        for (const model of Object.values(provider.models)) {
+            if (model.enabled) {
+                resolvePiModelMetadata(providerId, provider, model);
+            }
+        }
+    }
+    return config;
 }
 
 /**
@@ -199,6 +189,7 @@ export function buildModelSettingsDto(appConfig: {models: ModelSettingsConfig}):
         name: provider.name,
         enabled: provider.enabled,
         api: provider.api,
+        discovery: provider.discovery,
         options: {
             apiKey: provider.options.apiKey,
             baseURL: provider.options.baseURL,
@@ -211,14 +202,14 @@ export function buildModelSettingsDto(appConfig: {models: ModelSettingsConfig}):
             id: model.id,
             group: model.group,
             enabled: model.enabled,
-            provider: model.provider,
             api: model.api,
-            baseUrl: model.baseUrl,
             reasoning: model.reasoning,
             input: model.input,
             maxTokens: model.maxTokens,
             cost: model.cost,
             compat: model.compat,
+            headers: model.headers,
+            thinkingLevelMap: model.thinkingLevelMap,
             contextWindowTokens: model.contextWindowTokens,
         })).sort((left, right) => left.id.localeCompare(right.id)),
     })).sort((left, right) => left.id.localeCompare(right.id));
@@ -332,9 +323,7 @@ export async function checkProviderConnection(
     modelDrafts?: Array<Omit<ConfiguredModelDto, "enabled">>,
     options: ModelHealthCheckOptions = {},
 ): Promise<CheckProviderResponseDto> {
-    const modelDraft = modelDrafts === undefined
-        ? firstPiRegistryModelAsDraft(providerDraft.id)
-        : modelDrafts[0] ?? null;
+    const modelDraft = modelDrafts?.[0] ?? null;
     if (!modelDraft) {
         return {
             success: false,
@@ -350,18 +339,12 @@ export async function checkProviderConnection(
  * 从 OpenAI-compatible `/models` 端点抓取 Provider 模型列表。
  */
 export async function discoverProviderModels(providerDraft: ModelProviderDraftDto): Promise<DiscoverProviderModelsResponseDto> {
-    const baseURL = providerDraft.options.baseURL.trim();
-    if (!baseURL) {
-        throw new Error(`${providerDraft.name} 缺少 API Base，无法查询 /models。`);
-    }
-
     const startedAt = Date.now();
-    const response = await fetchProviderModels(providerDraft, baseURL);
-    const models = parseOpenAIModelsResponse(response);
+    const models = await discoverProviderModelMetadata(providerDraft);
 
     return {
         models,
-        message: `已从 ${providerDraft.name} 远程发现 ${models.length} 个模型，用时 ${String(Date.now() - startedAt)}ms。`,
+        message: `已从 ${providerDraft.name} 发现 ${models.length} 个模型，用时 ${String(Date.now() - startedAt)}ms。`,
     };
 }
 
@@ -449,29 +432,36 @@ async function runPiModelSmokeCheck(
         };
     }
 
-    const model = resolvePiModelForDraft(providerDraft, modelDraft);
-    const config = {
-        models: {
-            defaultModelKey: `${providerDraft.id}/${modelDraft.id}`,
-            providers: {
-                [providerDraft.id]: {
-                    name: providerDraft.name,
-                    enabled: true,
-                    api: providerDraft.api,
-                    options: providerDraft.options,
-                    models: {
-                        [modelDraft.id]: {...modelDraft, enabled: true},
+    const startedAt = Date.now();
+    try {
+        const model = resolvePiModelMetadata(providerDraft.id, {
+            name: providerDraft.name,
+            enabled: true,
+            api: providerDraft.api,
+            discovery: providerDraft.discovery,
+            options: providerDraft.options,
+            models: {},
+        }, {...modelDraft, enabled: true});
+        const config = {
+            models: {
+                defaultModelKey: `${providerDraft.id}/${modelDraft.id}`,
+                providers: {
+                    [providerDraft.id]: {
+                        name: providerDraft.name,
+                        enabled: true,
+                        api: providerDraft.api,
+                        discovery: providerDraft.discovery,
+                        options: providerDraft.options,
+                        models: {
+                            [modelDraft.id]: {...modelDraft, enabled: true},
+                        },
                     },
                 },
             },
-        },
-    };
-    const models = options.runtimeResolver?.(providerDraft, modelDraft, model) ?? resolvePiModelsFromConfig(config, model);
-    const customPiRuntime = isCustomPiRuntimeFromConfig(config, model);
-    const requestOptions = parsePiSimpleRequestOptions(providerDraft.options.requestOptions);
-    const apiKey = providerDraft.options.apiKey.trim() || undefined;
-    const startedAt = Date.now();
-    try {
+        };
+        const models = options.runtimeResolver?.(providerDraft, modelDraft, model) ?? resolvePiModelsFromConfig(config, model);
+        const requestOptions = parsePiSimpleRequestOptions(providerDraft.options.requestOptions);
+        const apiKey = providerDraft.options.apiKey.trim() || undefined;
         const stream = tracedStreamSimple(models, model, {
             systemPrompt: "You are a concise connectivity smoke test assistant.",
             messages: [createUserMessage({text: pickModelSmokeCheckPrompt()})],
@@ -481,7 +471,6 @@ async function runPiModelSmokeCheck(
             ...piRequestAuthOptions({
                 api: model.api,
                 apiKey,
-                customRuntime: customPiRuntime,
                 env: requestOptions.env,
             }),
             headers: mergePiRequestHeaders(model.headers, requestOptions.headers),
@@ -520,13 +509,13 @@ async function runPiModelSmokeCheck(
             return {
                 success: false,
                 latencyMs,
-                message: `${providerDraft.name}/${model.id} 检查已取消。`,
+                message: `${providerDraft.name}/${modelDraft.id} 检查已取消。`,
             };
         }
         return {
             success: false,
             latencyMs,
-            message: `${providerDraft.name}/${model.id} 检查失败：${providerErrorText(error)}`,
+            message: `${providerDraft.name}/${modelDraft.id} 检查失败：${providerErrorText(error)}`,
         };
     }
 }
@@ -542,195 +531,4 @@ function isAbortError(error: unknown): boolean {
         ? (error as {name?: unknown}).name
         : null;
     return name === "AbortError";
-}
-
-function resolvePiModelForDraft(providerDraft: ModelProviderDraftDto, modelDraft: Omit<ConfiguredModelDto, "enabled">): Model<Api> {
-    const piProviderId = modelDraft.provider ?? providerDraft.id;
-    const piModel = resolvePiRegistryModel(piProviderId, modelDraft.id);
-    const api = modelDraft.api ?? providerDraft.api ?? piModel?.api ?? "openai-completions";
-    const compat = {
-        ...(piProviderId === "xiaomi-token-plan-cn" ? XIAOMI_TOKEN_PLAN_COMPAT : {}),
-        ...(piModel?.compat ?? {}),
-        ...(modelDraft.compat ?? {}),
-    } as Model<Api>["compat"];
-    return {
-        ...(piModel ?? {
-            id: modelDraft.id,
-            name: modelDraft.name,
-            api,
-            provider: piProviderId,
-            baseUrl: providerDraft.options.baseURL || modelDraft.baseUrl || "",
-            reasoning: modelDraft.reasoning ?? false,
-            input: normalizePiModelInput(modelDraft.input),
-            cost: modelDraft.cost ?? {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-            },
-            contextWindow: modelDraft.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW,
-            maxTokens: modelDraft.maxTokens ?? DEFAULT_MAX_TOKENS,
-            compat,
-        }),
-        id: modelDraft.id,
-        name: modelDraft.name || piModel?.name || modelDraft.id,
-        api,
-        provider: piProviderId,
-        baseUrl: providerDraft.options.baseURL || modelDraft.baseUrl || piModel?.baseUrl || "",
-        reasoning: modelDraft.reasoning ?? piModel?.reasoning ?? false,
-        input: normalizePiModelInput(modelDraft.input ?? piModel?.input ?? ["text"]),
-        cost: {
-            input: modelDraft.cost?.input ?? piModel?.cost.input ?? 0,
-            output: modelDraft.cost?.output ?? piModel?.cost.output ?? 0,
-            cacheRead: modelDraft.cost?.cacheRead ?? piModel?.cost.cacheRead ?? 0,
-            cacheWrite: modelDraft.cost?.cacheWrite ?? piModel?.cost.cacheWrite ?? 0,
-            tiers: modelDraft.cost?.tiers ?? piModel?.cost.tiers,
-        },
-        contextWindow: modelDraft.contextWindowTokens ?? piModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-        maxTokens: modelDraft.maxTokens ?? piModel?.maxTokens ?? DEFAULT_MAX_TOKENS,
-        headers: piModel?.headers ?? {},
-        compat,
-    };
-}
-
-function firstPiRegistryModelAsDraft(providerId: string): Omit<ConfiguredModelDto, "enabled"> | null {
-    const model = resolvePiProviderModels(providerId)[0];
-    if (!model) {
-        return null;
-    }
-    return {
-        name: model.name,
-        id: model.id,
-        group: deriveModelGroup(model.id),
-        provider: model.provider,
-        api: model.api,
-        baseUrl: model.baseUrl,
-        reasoning: model.reasoning,
-        input: [...model.input],
-        maxTokens: model.maxTokens,
-        cost: {
-            ...model.cost,
-            tiers: model.cost.tiers ?? [],
-        },
-        compat: normalizePiModelCompat(model.compat),
-        contextWindowTokens: model.contextWindow,
-    };
-}
-
-function normalizePiModelCompat(compat: Model<Api>["compat"]): Record<string, JsonValue> | null {
-    if (!compat || typeof compat !== "object" || Array.isArray(compat)) {
-        return null;
-    }
-    return Object.fromEntries(
-        Object.entries(compat).filter((entry): entry is [string, JsonValue] => isJsonValue(entry[1])),
-    );
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return true;
-    }
-    if (Array.isArray(value)) {
-        return value.every(isJsonValue);
-    }
-    if (typeof value === "object") {
-        return Object.values(value).every(isJsonValue);
-    }
-    return false;
-}
-
-function normalizePiModelInput(input: ConfigModelInput[] | PiModelInput[] | null | undefined): PiModelInput[] {
-    const values = [...new Set((input ?? ["text"]).filter((item): item is PiModelInput => item === "text" || item === "image"))];
-    return values.length > 0 ? values : ["text"];
-}
-
-function resolvePiProviderModels(providerId: string): Model<Api>[] {
-    if (!getBuiltinProviders().includes(providerId as KnownProvider)) {
-        return [];
-    }
-    return getBuiltinModels(providerId as KnownProvider);
-}
-
-function resolvePiRegistryModel(providerId: string, modelId: string): Model<Api> | undefined {
-    if (!getBuiltinProviders().includes(providerId as KnownProvider)) {
-        return undefined;
-    }
-    return getBuiltinModels(providerId as KnownProvider).find((model) => model.id === modelId);
-}
-
-/**
- * 请求 Provider 的 OpenAI-compatible `/models` 端点。
- */
-async function fetchProviderModels(providerDraft: ModelProviderDraftDto, baseURL: string): Promise<OpenAIModelsResponse> {
-    const controller = new AbortController();
-    const timeoutMs = providerDraft.options.timeoutMs ?? DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS;
-    const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-    const headers: Record<string, string> = {
-        accept: "application/json",
-    };
-    const apiKey = providerDraft.options.apiKey.trim();
-    if (apiKey) {
-        headers.authorization = `Bearer ${apiKey}`;
-    }
-
-    try {
-        const requestInit: ProviderFetchInit = {
-            method: "GET",
-            headers,
-            signal: controller.signal,
-            ...(providerDraft.options.proxy.trim()
-                ? {dispatcher: new ProxyAgent(providerDraft.options.proxy.trim())}
-                : {}),
-        };
-        const response = await fetch(buildModelsEndpoint(baseURL), requestInit as RequestInit);
-
-        if (!response.ok) {
-            throw new Error(`${providerDraft.name} /models 请求失败：HTTP ${String(response.status)} ${response.statusText}`);
-        }
-
-        const payload = await response.json();
-        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-            throw new Error(`${providerDraft.name} /models 返回的 JSON 不是对象。`);
-        }
-
-        return payload as OpenAIModelsResponse;
-    } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-            throw new Error(`${providerDraft.name} /models 请求超时（${String(timeoutMs)}ms）。`);
-        }
-        throw error;
-    } finally {
-        globalThis.clearTimeout(timeout);
-    }
-}
-
-/**
- * 将 API Base 规范化为 `/models` 端点。
- */
-function buildModelsEndpoint(baseURL: string): string {
-    return `${baseURL.replace(/\/+$/, "")}/models`;
-}
-
-/**
- * 解析 OpenAI-compatible 模型列表响应。
- */
-function parseOpenAIModelsResponse(response: OpenAIModelsResponse): DiscoveredProviderModelDto[] {
-    if (!Array.isArray(response.data)) {
-        throw new Error("/models 返回缺少 data 数组。");
-    }
-
-    const modelsById = new Map<string, DiscoveredProviderModelDto>();
-    for (const item of response.data) {
-        const modelId = typeof item.id === "string" ? item.id.trim() : "";
-        if (!modelId || modelsById.has(modelId)) {
-            continue;
-        }
-        modelsById.set(modelId, {
-            id: modelId,
-            name: modelId,
-            group: deriveModelGroup(modelId),
-        });
-    }
-
-    return [...modelsById.values()].sort((left, right) => left.id.localeCompare(right.id));
 }

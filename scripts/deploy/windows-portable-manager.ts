@@ -7,6 +7,7 @@ import {Command} from "commander";
 
 import {ensureStateFiles} from "nbook/packages/neuro-book-manager/src/config";
 import {writeInstallationManifest} from "nbook/packages/neuro-book-manager/src/manifest-store";
+import {writePortableLaunchers} from "nbook/packages/neuro-book-manager/src/portable-launchers";
 import {installManagedBun, installManagerExecutable, writeManagerWrapper, writeRuntimeWrapper} from "nbook/packages/neuro-book-manager/src/runtime";
 import {installManagedTool, writeManagedToolWrappers} from "nbook/packages/neuro-book-manager/src/tools";
 import type {InstallationManifest} from "nbook/packages/neuro-book-manager/src/types";
@@ -60,7 +61,7 @@ async function packagePortable(output: string, sourceArchive: string, productArc
     await writeManagerWrapper(stage, manager, runtime);
     await ensureStateFiles(resolve(stage, "data"), 3000, false);
     await writeFile(resolve(stage, "data", "README.txt"), "NeuroBook user state. Keep this directory when updating.\r\n", "utf8");
-    await writeLaunchers(stage);
+    await writePortableLaunchers(stage);
     await verifyPortableExecutables(stage, runtime.path, rg.path, git.path, git.bashPath);
     const now = new Date().toISOString();
     const manifest: InstallationManifest = {
@@ -115,20 +116,6 @@ async function verifyPortableExecutables(root: string, bunPath: string, rgPath: 
     for (const [name, path] of [["bun", bunPath], ["rg", rgPath], ["git", gitPath], ["bash", bashPath]] as const) {
         const output = await runCapture(resolve(root, path), ["--version"], {cwd: root});
         if (!output.trim()) throw new Error(`Windows Portable ${name} --version 没有输出。`);
-    }
-}
-
-async function writeLaunchers(root: string): Promise<void> {
-    const entries = {
-        "Start Neuro Book.cmd": "@echo off\r\ncd /d \"%~dp0\"\r\ncall .runtime\\bin\\neuro-book.cmd start\r\n",
-        "Update Neuro Book.cmd": "@echo off\r\ncd /d \"%~dp0\"\r\ncall .runtime\\bin\\neuro-book.cmd update\r\n",
-        "Create Admin.cmd": "@echo off\r\ncd /d \"%~dp0\"\r\ncall .runtime\\bin\\neuro-book.cmd admin create\r\n",
-        "Start Neuro Book.ps1": "Set-Location $PSScriptRoot\n& $PSScriptRoot\\.runtime\\bin\\neuro-book.cmd start\n",
-        "Update Neuro Book.ps1": "Set-Location $PSScriptRoot\n& $PSScriptRoot\\.runtime\\bin\\neuro-book.cmd update\n",
-        "Create Admin.ps1": "Set-Location $PSScriptRoot\n& $PSScriptRoot\\.runtime\\bin\\neuro-book.cmd admin create\n",
-    };
-    for (const [name, content] of Object.entries(entries)) {
-        await writeFile(resolve(root, name), content, "utf8");
     }
 }
 

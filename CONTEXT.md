@@ -76,6 +76,22 @@ _Avoid_: config mirror, settings
 单用户全局运行配置，位于 Workspace Root `.nbook/config.json`。
 _Avoid_: boot config, project config
 
+**Provider Preset**:
+NeuroBook 维护的只读 Provider 创建模板，提供默认名称、Pi API、Base URL 和 Discovery Adapter；复制到 Global Config 后不再持续引用或跟随预设。
+_Avoid_: Provider Config, runtime provider, credential profile
+
+**Model Catalog**:
+NeuroBook 维护的只读标准模型能力目录，按精确 model ID 保持唯一 canonical 条目；只参与设置页创建和编辑，不参与 Agent runtime 解析。
+_Avoid_: user model list, live registry, discovery cache
+
+**Provider Config**:
+Global Config 中用户保存的完整 Provider 连接与模型能力配置；包含本地 ID、连接参数、Discovery Adapter 和自包含模型列表，是模型 runtime 的唯一配置真值源。
+_Avoid_: Provider Preset, Pi Provider ID, metadata source
+
+**Provider Discovery Adapter**:
+设置页按 Provider Config 选择的模型发现适配器，负责把不同远程目录响应归一化为前端临时模型能力；发现结果不持久化，只有用户保存后的完整 Provider Config 进入 Global Config。
+_Avoid_: JSONPath mapping, runtime refresh, discovery cache
+
 **App SQLite**:
 应用级 SQLite 数据库，位于 Workspace Root `.nbook`，保存用户、鉴权和 Global Config，不记录 Project Workspace。
 _Avoid_: project database, SQLite Data File
@@ -165,6 +181,10 @@ _Avoid_: files-only panel, workspace switcher
 - Windows Portable uses `data/` as State Root, so its physical Workspace Root is `data/workspace/` while Project Path remains `workspace/{project-slug}`.
 - **NeuroBook Manager** updates component-owned paths and must not overwrite State Root user data.
 - **Global Config** lives in **Workspace Root `.nbook`**.
+- A **Provider Preset** may create one **Provider Config**, but the saved Provider Config does not retain a reference to the preset.
+- A **Provider Config** owns its Base URL, credentials, request options, Discovery Adapter selection, and complete user model list.
+- A **Model Catalog** entry may be copied into a Provider Config model, but Agent runtime never queries the Model Catalog.
+- A **Provider Discovery Adapter** returns frontend-temporary model data; incomplete data may be replaced by one exact-ID Model Catalog capability block before the user saves it.
 - **App SQLite** lives in **Workspace Root `.nbook`**.
 - **Project SQLite** lives in exactly one **Project Workspace `.nbook`**.
 - **Project Path** locates exactly one **Project Workspace** under a **Workspace Root**.

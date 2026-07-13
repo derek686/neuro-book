@@ -10,7 +10,6 @@ export type CreateRunFrameInput = {
     systemPrompt: RunFrame["systemPrompt"];
     messages: RunFrame["messages"];
     models: RunFrame["models"];
-    customPiRuntime?: RunFrame["customPiRuntime"];
     model: RunFrame["model"];
     apiKey?: RunFrame["apiKey"];
     timeoutMs?: RunFrame["timeoutMs"];
@@ -56,7 +55,6 @@ export function createRunFrame(input: CreateRunFrameInput): RunFrame {
         systemPrompt: input.systemPrompt,
         messages: input.messages.slice(),
         models: input.models,
-        customPiRuntime: input.customPiRuntime,
         model: input.model,
         apiKey: input.apiKey,
         timeoutMs: input.timeoutMs,

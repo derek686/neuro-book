@@ -432,9 +432,10 @@ describe("config service", {timeout: 30_000}, () => {
                     id: "custom",
                     name: "Custom",
                     api: "openai-completions",
+                    discovery: {adapter: "none", endpointPath: null},
                     options: {
                         apiKey: {configured: false, maskedValue: null, value: "sk-custom"},
-                        baseURL: "",
+                        baseURL: "https://model.example/v1",
                         proxy: "",
                         timeoutMs: null,
                         requestOptions: {},
@@ -444,9 +445,7 @@ describe("config service", {timeout: 30_000}, () => {
                         name: "Mimo Vision",
                         group: null,
                         enabled: true,
-                        provider: "xiaomi-token-plan-cn",
                         api: "openai-completions",
-                        baseUrl: "https://model.example/v1",
                         reasoning: true,
                         input: ["text", "image"],
                         maxTokens: 1234,
@@ -460,6 +459,8 @@ describe("config service", {timeout: 30_000}, () => {
                             thinkingFormat: "deepseek",
                             supportsStrictMode: false,
                         },
+                        headers: {"X-Test": "value"},
+                        thinkingLevelMap: {high: "high"},
                         contextWindowTokens: 98765,
                     }],
                 }],
@@ -469,9 +470,7 @@ describe("config service", {timeout: 30_000}, () => {
         const visionModel = snapshot.modelSettings.providers[0]?.models.find((model) => model.id === "mimo-vl");
 
         expect(visionModel).toMatchObject({
-            provider: "xiaomi-token-plan-cn",
             api: "openai-completions",
-            baseUrl: "https://model.example/v1",
             reasoning: true,
             input: ["text", "image"],
             maxTokens: 1234,
@@ -485,6 +484,8 @@ describe("config service", {timeout: 30_000}, () => {
                 thinkingFormat: "deepseek",
                 supportsStrictMode: false,
             },
+            headers: {"X-Test": "value"},
+            thinkingLevelMap: {high: "high"},
             contextWindowTokens: 98765,
         });
         expect(snapshot.modelSettings.providers[0]?.api).toBe("openai-completions");

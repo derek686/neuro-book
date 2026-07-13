@@ -12,6 +12,7 @@ import type {
     ConfiguredProviderConfig,
     EffectiveConfig,
     ModelProviderOptionsConfig,
+    ProviderDiscoveryConfig,
     ModelSettingsConfig,
     EmbeddingModelConfig,
     EmbeddingServiceConfig,
@@ -376,6 +377,7 @@ export function normalizeModelSettings(input: StoredGlobalConfig["models"] | und
                 name: normalizeText(provider.name) || provider.id,
                 enabled: provider.enabled ?? true,
                 api: normalizeNullableText(provider.api),
+                discovery: normalizeProviderDiscovery(provider.discovery),
                 options: normalizeProviderOptions(provider.options),
                 models: Object.fromEntries(provider.models.map((model) => [model.id, normalizeModel(model)])),
             } satisfies ConfiguredProviderConfig]),
@@ -395,6 +397,7 @@ export function serializeModelSettings(config: ModelSettingsConfig): StoredGloba
                 name: provider.name,
                 enabled: provider.enabled,
                 api: provider.api,
+                discovery: provider.discovery,
                 options: provider.options,
                 models: Object.values(provider.models)
                     .map((model) => ({...model}))
@@ -550,6 +553,7 @@ function normalizeStoredProviders(input: StoredProviderConfig[] | undefined): St
             name: normalizeText(provider.name),
             enabled: provider.enabled ?? true,
             api: normalizeNullableText(provider.api),
+            discovery: normalizeProviderDiscovery(provider.discovery),
             options: normalizeProviderOptions(provider.options),
             models: Array.isArray(provider.models) ? provider.models.map(normalizeModel) : [],
         }))
@@ -564,15 +568,25 @@ function normalizeModel(input: Partial<ConfiguredModelConfig>): ConfiguredModelC
         id,
         group: normalizeNullableText(input.group),
         enabled: input.enabled ?? true,
-        provider: normalizeNullableText(input.provider),
         api: normalizeNullableText(input.api),
-        baseUrl: normalizeNullableText(input.baseUrl),
         reasoning: typeof input.reasoning === "boolean" ? input.reasoning : null,
         input: normalizeModelInput(input.input),
         maxTokens: normalizeNullablePositiveInteger(input.maxTokens),
         cost: normalizeModelCost(input.cost),
         compat: normalizeNullableJsonRecord(input.compat),
+        headers: normalizeNullableStringRecord(input.headers),
+        thinkingLevelMap: normalizeNullableStringRecord(input.thinkingLevelMap),
         contextWindowTokens: normalizeNullablePositiveInteger(input.contextWindowTokens),
+    };
+}
+
+function normalizeProviderDiscovery(input: Partial<ProviderDiscoveryConfig> | undefined): ProviderDiscoveryConfig {
+    const adapter = input?.adapter;
+    return {
+        adapter: adapter === "openai-models" || adapter === "openrouter-models" || adapter === "google-models" || adapter === "none"
+            ? adapter
+            : "none",
+        endpointPath: normalizeNullableText(input?.endpointPath),
     };
 }
 
@@ -849,6 +863,14 @@ function normalizeModelCost(input: unknown): ConfiguredModelConfig["cost"] {
         tiers: normalizeModelCostTiers(cost.tiers),
     };
     return normalized;
+}
+
+function normalizeNullableStringRecord(input: unknown): Record<string, string | null> | null {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+    }
+    const record = Object.fromEntries(Object.entries(input).flatMap(([key, value]) => typeof value === "string" || value === null ? [[key, value]] : []));
+    return Object.keys(record).length ? record : null;
 }
 
 function normalizeFiniteNumber(input: unknown): number {

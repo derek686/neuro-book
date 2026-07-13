@@ -49,9 +49,7 @@ export type ConfiguredModelConfig = {
     id: string;
     group: string | null;
     enabled: boolean;
-    provider: string | null;
     api: string | null;
-    baseUrl: string | null;
     reasoning: boolean | null;
     input: ModelInputKind[] | null;
     maxTokens: number | null;
@@ -69,7 +67,17 @@ export type ConfiguredModelConfig = {
         }>;
     } | null;
     compat: Record<string, JsonValue> | null;
+    headers: Record<string, string | null> | null;
+    thinkingLevelMap: Record<string, string | null> | null;
     contextWindowTokens: number | null;
+};
+
+export type ProviderDiscoveryAdapter = "openai-models" | "openrouter-models" | "google-models" | "none";
+
+export type ProviderDiscoveryConfig = {
+    adapter: ProviderDiscoveryAdapter;
+    /** 相对 Provider Base URL 的发现路径；为空时使用 Adapter 默认路径。 */
+    endpointPath: string | null;
 };
 
 export type ModelProviderOptionsConfig = {
@@ -84,6 +92,7 @@ export type ConfiguredProviderConfig = {
     name: string;
     enabled: boolean;
     api: string | null;
+    discovery: ProviderDiscoveryConfig;
     options: ModelProviderOptionsConfig;
     models: Record<string, ConfiguredModelConfig>;
 };

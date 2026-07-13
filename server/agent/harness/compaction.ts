@@ -63,7 +63,6 @@ export async function compactIfNeeded(input: {
     snapshot: SessionSnapshot;
     messages: AgentMessage[];
     models: Models;
-    customPiRuntime?: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs?: number | null;
@@ -90,7 +89,6 @@ export async function compactIfNeeded(input: {
         snapshot: input.snapshot,
         messages: input.messages,
         models: input.models,
-        customPiRuntime: input.customPiRuntime,
         tokensBefore: usage.tokens,
         model: input.model,
         apiKey: input.apiKey,
@@ -112,7 +110,6 @@ export async function appendCompaction(input: {
     snapshot: SessionSnapshot;
     messages: AgentMessage[];
     models: Models;
-    customPiRuntime?: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs?: number | null;
@@ -136,7 +133,6 @@ export async function appendCompaction(input: {
     const generatedSummary = await generateCompactionSummary({
         messages: plan.messagesToSummarize,
         models: input.models,
-        customPiRuntime: input.customPiRuntime,
         model: input.model,
         apiKey: input.apiKey,
         timeoutMs: input.timeoutMs,
@@ -220,7 +216,6 @@ export function shouldCompactWithOptions(contextTokens: number, contextWindow: n
 async function generateCompactionSummary(input: {
     messages: Message[];
     models: Models;
-    customPiRuntime?: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs?: number | null;
@@ -251,7 +246,6 @@ async function generateCompactionSummary(input: {
         ...piRequestAuthOptions({
             api: input.model.api,
             apiKey: input.apiKey,
-            customRuntime: input.customPiRuntime === true,
             env: requestOptions.env,
         }),
         headers: mergePiRequestHeaders(input.model.headers, requestOptions.headers),

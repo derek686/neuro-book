@@ -6,6 +6,7 @@ import {Command} from "commander";
 import {unzipSync} from "fflate";
 
 import {parseReleaseManifest} from "nbook/packages/neuro-book-manager/src/schema";
+import {verifyReleaseChecksums, writeReleaseChecksums} from "nbook/scripts/release/release-checksums";
 import {run, runCapture} from "nbook/scripts/utils/process.mjs";
 import {writeZipArchive} from "nbook/scripts/utils/zip";
 
@@ -30,6 +31,9 @@ program.command("manifest")
     .requiredOption("--windows-product <path>")
     .requiredOption("--linux-product <path>")
     .requiredOption("--portable <path>")
+    .requiredOption("--stage0-windows <path>")
+    .requiredOption("--stage0-windows-cmd <path>")
+    .requiredOption("--stage0-linux <path>")
     .requiredOption("--ghcr-ref <ref>")
     .requiredOption("--ghcr-digest <digest>")
     .requiredOption("--output <path>")
@@ -51,6 +55,9 @@ type ManifestOptions = {
     windowsProduct: string;
     linuxProduct: string;
     portable: string;
+    stage0Windows: string;
+    stage0WindowsCmd: string;
+    stage0Linux: string;
     ghcrRef: string;
     ghcrDigest: string;
     output: string;
@@ -125,9 +132,11 @@ async function buildReleaseManifest(options: ManifestOptions): Promise<void> {
         resolve(ROOT, options.linuxProduct),
         resolve(ROOT, options.portable),
         output,
+        resolve(ROOT, options.stage0Windows),
+        resolve(ROOT, options.stage0WindowsCmd),
+        resolve(ROOT, options.stage0Linux),
     ];
-    const sums = await Promise.all(allFiles.map(async (path) => `${await Bun.file(path).arrayBuffer().then((bytes) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex"))}  ${basename(path)}`));
-    await writeFile(resolve(dirname(output), "SHA256SUMS"), `${sums.join("\n")}\n`, "utf8");
+    await writeReleaseChecksums(allFiles, resolve(dirname(output), "SHA256SUMS"));
 }
 
 /** 对最终公开资产重新计算 checksum，并检查 Product/Portable 平台内容。 */
@@ -137,6 +146,16 @@ async function verifyReleaseAssets(directory: string, tagInput: string, revision
     if (`v${manifest.version}` !== tag || manifest.sourceRevision !== revision) {
         throw new Error("Release tag、revision 与 release-manifest.json 不一致。" );
     }
+    await verifyReleaseChecksums(directory, [
+        "neuro-book-source.zip",
+        "neuro-book-product-windows-x64.zip",
+        "neuro-book-product-linux-x64-glibc.tar.gz",
+        "neuro-book-windows-x64.zip",
+        "release-manifest.json",
+        "install.ps1",
+        "install.cmd",
+        "install.sh",
+    ]);
     const expectedAssets = [manifest.source, ...manifest.products, manifest.windowsPortable];
     for (const expected of expectedAssets) {
         const path = resolve(directory, basename(new URL(expected.url).pathname));

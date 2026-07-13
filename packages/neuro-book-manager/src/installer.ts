@@ -14,7 +14,7 @@ import {
 } from "#manager/component";
 import {ensureStateFiles} from "#manager/config";
 import {buildSourceDockerImage, startDocker, verifyDockerApplication, writeDockerCompose} from "#manager/docker";
-import {ensureDirectory, pathExists, removePath, writeTextAtomic} from "#manager/files";
+import {ensureDirectory, pathExists, removePath} from "#manager/files";
 import {assertCleanWorktree, createStagedWorktree, materializeRepository, removeStagedWorktree, repositoryRevision} from "#manager/git";
 import {assertNativeProductStopped, backupApplicationDatabase, statePort, verifyNativeProduct} from "#manager/health";
 import {withInstallLock} from "#manager/lock";
@@ -22,6 +22,7 @@ import {readInstallationManifest, resolveReleaseManifest, writeInstallationManif
 import {backupRuntimeWrappers, commitOperation, createOperation, recoverInterruptedOperations, updateOperation} from "#manager/operation";
 import {assertManagerPlatform, currentProductPlatform} from "#manager/platform";
 import {installationPaths} from "#manager/paths";
+import {writePortableLaunchers} from "#manager/portable-launchers";
 import {buildSourceProduct, installSourceDependencies} from "#manager/product";
 import {profileDefinition} from "#manager/profiles";
 import {commandAvailable, run, runCapture} from "#manager/process";
@@ -382,13 +383,4 @@ function assertManagerVersion(minimum: string, root: string, channel: ReleaseCha
     if (!lt(MANAGER_VERSION, minimum)) return;
     const tag = channel === "stable" ? "latest" : "canary";
     throw new Error(`当前 Manager ${MANAGER_VERSION} 低于 Release 要求 ${minimum}。请执行：\ncd ${JSON.stringify(resolve(root))}\nbunx --bun @notnotype/neuro-book-manager@${tag} update`);
-}
-
-async function writePortableLaunchers(root: string): Promise<void> {
-    await writeTextAtomic(join(root, "Start Neuro Book.cmd"), "@echo off\r\ncd /d \"%~dp0\"\r\ncall .runtime\\bin\\neuro-book.cmd start\r\n");
-    await writeTextAtomic(join(root, "Update Neuro Book.cmd"), "@echo off\r\ncd /d \"%~dp0\"\r\ncall .runtime\\bin\\neuro-book.cmd update\r\n");
-    await writeTextAtomic(join(root, "Create Admin.cmd"), "@echo off\r\ncd /d \"%~dp0\"\r\ncall .runtime\\bin\\neuro-book.cmd admin create\r\n");
-    await writeTextAtomic(join(root, "Start Neuro Book.ps1"), "Set-Location $PSScriptRoot\n& $PSScriptRoot\\.runtime\\bin\\neuro-book.cmd start\n");
-    await writeTextAtomic(join(root, "Update Neuro Book.ps1"), "Set-Location $PSScriptRoot\n& $PSScriptRoot\\.runtime\\bin\\neuro-book.cmd update\n");
-    await writeTextAtomic(join(root, "Create Admin.ps1"), "Set-Location $PSScriptRoot\n& $PSScriptRoot\\.runtime\\bin\\neuro-book.cmd admin create\n");
 }

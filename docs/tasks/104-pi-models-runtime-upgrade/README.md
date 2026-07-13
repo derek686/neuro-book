@@ -45,6 +45,48 @@
 - 模型设置父组件继续作为 Pi catalog/effective metadata 的唯一解析者；Dialog 在继承状态展示四项实际价格和逐 tier 摘要，registry 缺失时明确显示无可用继承价格，不再用 0 冒充继承值。
 - 未增加第二套 Provider seam、测试生产后门、持久化 runtime binding 或兼容分支；Faux 测试仍通过正式 runtime resolver 注入 suite 私有 `Models`。
 
+### Dynamic pricing catalog fix（2026-07-12）
+
+- 实际设置页请求发现 Pi `0.80.6` 的 `openrouter/openrouter/auto` 使用 `input/output = -1000000` 表示动态/未知价格，原 catalog DTO 将其误判为用户价格并使整个 `/api/config/models/pi-catalog` 返回 500。
+- 新增统一 Pi registry 价格 normalizer：只有基础价格和全部 tiers 均为有限非负数、threshold 为不重复非负整数时才作为可继承价格输出；动态/未知价格在 catalog 中投影为 `null`，模型本身继续保留。
+- runtime resolver 复用同一 normalizer。没有用户完整价格覆盖时，无效 registry 价格归零，避免 Pi `calculateCost()` 把负哨兵写入 usage；用户保存的自定义价格合同仍严格要求有限非负数，没有放宽 Config 校验。
+- 模型编辑 Dialog 对 `null` 价格显示“没有稳定价格/可能使用动态定价”，点击自定义价格会进入空的完整价格草稿，不把未知价格伪装为继承 0。
+
+### Custom model metadata / maxTokens incident（2026-07-12）
+
+session 518 的 trace 证明升级后仍有一条未收口合同：本地连接 `mimo` 下的 `mimo-v2.5-pro` 没有保存 `model.provider`，因此 runtime 将本地连接 ID 误作 Pi metadata Provider，registry lookup 失败后猜测 `openai-completions`、`contextWindow = 256000` 和 `maxTokens = 256000`。Pi `0.80.6` 的 `streamSimple()` 与 `0.75.4` 不同，会默认采用 `model.maxTokens` 并按当前上下文 clamp，最终实际发送 `max_completion_tokens = 211884`，被同一 endpoint 以 400 拒绝。
+
+本轮重新打开 Task 104，锁定以下修正合同：
+
+- `providerConfigId` 只表示本地连接；`model.provider` 只表示 Pi registry metadata 来源，设置页必须把二者明确区分。
+- registry metadata 解析、纯自定义模型校验、compat、价格和 limits 必须只有一个服务端实现，Harness 与健康检查不得继续复制逻辑。
+- 纯自定义模型不再猜测 API、base URL、context window 或 max output tokens；用户已决定四项均必须显式填写，且 `maxTokens <= contextWindowTokens`。
+- 显式指定 metadata Provider 但对应 model 不存在时明确失败，不降级为纯自定义模型。
+- session 持久化模型选择 key；每次新 invocation 按当前配置重新解析完整 metadata。同 key metadata 变化时追加 `model_change`，invocation 开始后仍保持冻结。
+- 当前 `mimo/mimo-v2.5-pro` 连接应绑定 `xiaomi-token-plan-cn` metadata；不直接改写 session 518 历史，下一次 invocation 通过 reconcile 追加修正后的模型。
+
+实施结果：
+
+- 新增唯一纯函数 `resolvePiModelMetadata()`，Harness、模型健康检查和保存校验共用同一解析边界。`providerConfigId` 只定位本地连接；只有显式 `model.provider` 才绑定 Pi registry，空值始终表示纯自定义，不再按本地连接 ID 隐式猜 metadata。
+- registry 绑定会继承 API、reasoning、input、context window、max tokens、headers、compat 与价格，同时保留本地连接的 API key、base URL 和 request options。显式来源缺少对应 model 时直接报配置错误。
+- 纯自定义模型必须由模型或本地连接显式提供受支持 API 与 base URL，并由模型显式提供 context window、max tokens；limits 缺失或 `maxTokens > contextWindowTokens` 均在保存、健康检查和运行前明确失败。
+- 模型设置 Dialog 已将 metadata 来源改为 catalog 候选选择器。catalog/远程发现只有唯一候选时自动绑定；无候选或多候选时打开编辑器，不按 URL、名称或 model ID 跨 Provider 猜来源。继承价格和 limits 也只读取显式来源。
+- session invocation reconcile 改为按 `providerConfigId + model.id` 从当前配置刷新完整 metadata，并用深比较控制 `model_change`；手动 compaction 同样先 reconcile。RunFrame 创建后仍冻结完整 binding。
+- 当前 `workspace/.nbook/config.json` 中 `mimo/mimo-v2.5-pro` 已绑定 `xiaomi-token-plan-cn`。session 518 历史未改写，也未使用真实凭据重放。
+
+### Provider Preset / Model Catalog / unified runtime redesign（2026-07-13）
+
+对 metadata 绑定实现进行全链路审查后，确认 `model.provider` 同时承担本地 runtime Provider、Pi registry 来源和 catalog 候选身份，仍会造成端点回退、同名模型歧义和 catalog 快照语义漂移。本轮按用户重新确认的产品模型硬切：
+
+- NeuroBook 维护只读 Provider Preset 与按 model ID 唯一的标准 Model Catalog；它们只服务设置页创建/编辑，不进入 invocation runtime。
+- 用户 Provider Config 是完整、自包含的运行真相源。Provider 保存本地连接和发现 Adapter；模型在 Provider Config 内保存完整 API、能力、limits、价格和 compat。
+- 删除模型级 `provider` / `baseUrl`。resolved Pi model 的 `provider` 永远是本地 Provider Config ID，Base URL 永远来自本地 Provider Config。
+- 所有 Provider Config 都使用独立 `createModels() + createProvider()`，删除 builtin/custom 双轨 runtime。
+- 模型发现结果只存在前端。远程 metadata 完整时直接使用；不完整时按精确 model ID 用 NeuroBook Model Catalog 的完整能力块替换；Catalog 缺失时保持禁用，用户手工补齐后才能启用。
+- Model Catalog 从 Pi `0.80.6` 生成唯一 canonical 条目，使用固定 Provider 来源优先级；compat/headers 按 Pi API 保存。MiMo `max_tokens` 修正改为 `model ID + API` catalog patch，不再按 Xiaomi CN Provider 写 runtime 特例。
+- Catalog 中有效价格复制到所有 Provider 的模型草稿，这是用户明确锁定的产品合同。
+- session 继续只以 `providerConfigId + model.id` 作为稳定选择；新增可序列化 canonicalizer，避免 `undefined` 在 JSONL round-trip 后制造重复 `model_change`。
+
 ## Goal
 
 将 NeuroBook 的 Pi LLM 边界从 `0.75.4` 的全局 API 完整迁移到 `0.80.6` 的 `Models + Provider` 模型，验证内置 Provider、自定义 OpenAI-compatible Provider、同类 Provider 多连接、Agent turn、compaction、模型健康检查、请求观测和 Product runtime 均可工作；同时完整承接 `max` thinking 和长上下文价格 tier。迁移完成后，生产代码和测试不得导入 `/compat`，不得继续依赖全局 provider registry，旧 API guard 必须阻止回归。
@@ -497,12 +539,14 @@ Exit criteria:
 - 错误安全实际实现复用了 app logger 已有脱敏职责，没有把保留原始 `Error`/stack 诊断信息误判为确认泄漏；新增的是共享清洗底座、Provider 长度限制和 sidecar SSE 错误边界。
 - 曾尝试增加完整 sidecar SSE 集成测试，但 Faux sidecar response queue 无法稳定表达该独立断言，测试会在业务路径前耗尽响应。最终删除该不可靠测试，没有引入测试后门；sidecar 边界由直接代码合同和共享 sanitizer 单测覆盖。
 - 与计划的实现偏差：为让价格草稿测试进入正式测试矩阵，`vitest.config.ts` 新增 settings test include；Nuxt 首次构建被 `server/.agent` 下一个测试生成的旧 World Engine cache 文件拦截，删除该生成物后完整 `bun run nuxt:build` 通过，未放宽 Product portability guard。
+- session 518 收口时进一步发现 UI 曾把空 metadata 来源解释为“纯自定义”，服务端却仍按同名本地连接隐式查 registry。最终没有保留该双重语义：`model.provider` 成为唯一 metadata 来源，已有隐式配置按快速开发期规则在保存或运行时明确校验，不增加 legacy fallback。
 
 ## Verification Results
 
 - `bun run typecheck`：通过；hardening 收尾于 2026-07-12 再次复核通过。
 - Pi/runtime/model/cost/usage/trace/health-check/compaction/guard 聚焦测试：通过。
 - hardening 最终聚焦组合：`8` files / `229` tests 通过，覆盖 request options、runtime resolver、Provider sanitizer、app logger、compaction、主 Harness、black-box 与 harness trace。
+- 动态价格回归：catalog API、model resolver 与价格草稿 `3` files / `19` tests 通过；全量 catalog 解析成功，`openrouter/openrouter/auto` 保留且 `cost: null`；修复后 `bun run typecheck` 再次通过。
 - Harness 聚焦：主 Harness `165/165` 通过；一次较宽 Harness 组合为 `239/239` 通过。后续高并发组合中 black-box steer 时序用例出现非确定性失败并伴随测试目录提前清理，记录为既有测试时序问题，没有修改业务代码掩盖。
 - Config / model settings / shared DTO：`138/138` 通过。
 - 全量 Vitest：`1698` 通过、`9` 失败、`3` 跳过。失败集中在 auth 环境开关、Profile artifact compiler 版本断言、Profile build/publisher 超时、leader assets 超时和 Harness steer 时序；均不在 Pi 变更面。独立复跑后 auth 两项与 compiler version 断言稳定复现，其他为时序性失败。
@@ -511,6 +555,69 @@ Exit criteria:
 - Windows Portable：初次升级与 hardening 收尾均通过；本轮产物位于 `.agent/workspace/task-104-hardening/neuro-book-windows-x64.zip`，zip 内再次核实包含五个 Pi lazy API 与上述 runtime dependencies。
 - Docker build smoke：未执行，当前环境没有 `docker` 命令。
 - 真实 Provider smoke：未执行，未获得使用现有凭据的明确授权。
+- 浏览器验证：按项目约束未自动执行。
+
+### 真实 Provider smoke（2026-07-13）
+
+用户明确授权使用当前 Global Config 凭据后完成以下真实请求：
+
+- MiMo `mimo/mimo-v2.5-pro` 单模型健康检查通过，约 `2.4s`。
+- DeepSeek `deepseek/deepseek-v4-flash` 单模型健康检查通过，约 `0.9s`。
+- 临时 `leader.default` Agent session 使用 MiMo 完成真实 turn，返回 `reasoning` usage；随后手动 compaction 成功。
+- MiMo tool schema live probe 使用真实 Provider 完成原生对象 tool call，正式 schema 校验通过。
+- trace-on 链路记录了真实 `turn`、`toolUse` 与 `compaction`，HTTP 均为 `200`；MiMo 原生 payload 只含 `max_tokens`，不含 `max_completion_tokens`。
+- trace-off 链路由健康检查覆盖，请求行为正常。
+- 对真实 trace 文件执行凭据扫描：未发现当前配置 API key、Authorization、Cookie 或 Set-Cookie。
+- smoke 支持脚本同步修复：临时 session repo 与 Global Config 的 runtime workspace 语义分离，不再把临时绝对目录误当作外部 Workspace Root；移除已下线的 `result.events` 读取，并增加可选真实 compaction smoke。
+
+真实 smoke 同时确认一个观测缺口：健康检查目前调用统一 `tracedStreamSimple` seam，但没有传入 `PiTraceBinding`，因此不会持久化 `kind=health-check` trace。请求、错误清洗和取消合同不受影响，但这与 Task 104“健康检查 trace 可审计”的目标不完全一致；本轮作为验证发现记录，不在未获修复指令时修改业务代码。
+- session 518 metadata/maxTokens 收口：resolver、payload、设置保存与 catalog 候选决策聚焦 `4` files / `37` tests 通过；session selection metadata reconcile 聚焦 `3/3` 通过，主 Harness 文件完整运行退出码为 0。
+- 本轮收口后的 `bun run typecheck` 与 `bun run nuxt:build` 通过。
+- 本轮未调用 session 518 invocation 接口，也未执行真实 Provider smoke 或浏览器验证。
+
+## Provider Preset / Model Catalog / unified runtime 实施结果（2026-07-13）
+
+本轮按用户最终设计硬切了模型配置架构，以下内容覆盖前文仍描述 builtin/custom runtime、`model.provider` metadata binding 和模型级 Base URL 的旧实施记录。
+
+### 实际架构
+
+- 新增只读 **Provider Preset**：从 Pi builtin Provider 生成名称、默认 Base URL 和支持 API，再叠加 NeuroBook Discovery Adapter；另提供五种 Custom 预设。预设只用于创建时复制，保存后用户 Provider Config 与其完全独立。
+- 新增按精确 model ID 唯一的 **Model Catalog**：Pi `0.80.6` builtin models 是主要 seed，canonical source 使用固定厂商优先级选择，不依赖遍历顺序；compat/headers 按 Pi API 保存。动态或负价格哨兵归一化为 `null`。
+- MiMo 修正集中在 Catalog normalizer 的 `mimo-v2.5-pro + openai-completions` 条目，统一补充 `maxTokensField: "max_tokens"`，不再依赖 Xiaomi CN Provider ID。
+- Global Config 的 **Provider Config** 保存 Provider Base URL、API key、proxy、timeout、request options、Discovery Adapter 和完整模型能力。模型级 `provider` / `baseUrl` 已删除；resolved Pi model 的 `provider` 永远是本地 Provider Config ID。
+- runtime 不读取 Provider Preset、Model Catalog 或发现接口。所有 Provider 一律为当前 invocation 创建独立 `createModels() + createProvider()`；`customPiRuntime/customRuntime` 双轨标记已从 RunFrame、turn、sidecar 和 compaction 删除。
+- Catalog API 从旧 `/api/config/models/pi-catalog` 硬切为 `/api/config/models/catalog`。
+
+### 发现与设置页
+
+- 新增正式 Provider Discovery Adapter seam：`openai-models`、`openrouter-models`、`google-models`、`none`。各 Adapter 使用 Zod response schema，归一化不同 path 的 context/max token、modalities、reasoning 和可选价格，不支持任意 JSONPath。
+- 发现结果只保存在前端内存。完整远程能力直接采用；不完整时按精确 ID 用 Model Catalog 的完整能力块替换，不逐字段混合；Catalog 未命中时保存为禁用草稿并显示缺失字段。
+- Catalog 添加、发现回填、手动添加和“重新应用 Catalog”共用 Model Draft Factory。模型 Dialog 已删除 Pi metadata source 和模型级 Base URL，直接编辑最终 API、reasoning、input、limits、compat、headers、thinking map 与价格。
+- Provider 表单新增 Discovery Adapter 与 endpoint path；保存和健康检查继续由服务端校验所有启用模型的完整能力。
+
+### Session 与当前数据
+
+- session 稳定选择 key 仍是 `providerConfigId + model.id`。新 invocation 从当前 Provider Config 刷新完整模型，JSONL canonicalizer 删除 `undefined` 后深比较，避免 round-trip 后重复写 `model_change`；RunFrame 内继续冻结。
+- 当前 Global Config 已硬切：DeepSeek、MiMo、SiliconFlow 启用模型复制标准 Catalog 能力；MiMo 保存 `max_tokens` compat；Doubao 与 Gemini 模型因缺少可验证完整能力暂时禁用。所有启用模型 resolver audit 通过，现有 Profile modelKey 仍指向可用模型。
+
+### 与计划的差异
+
+- 最终实现进一步删除了此前 hardening 阶段保留的 builtin/custom runtime 分类以及 `customPiRuntime` 传播字段；这不是兼容层，而是用户最终统一 runtime 决策的直接结果。
+- OpenAI-compatible `/models` 本身通常不声明 reasoning，因此只有远程明确提供完整必需能力时才直接启用；否则严格走 Catalog 整块替换或禁用草稿，没有用 model ID 猜 reasoning。
+- Windows Portable 输出使用发布脚本的标准 `dist/neuro-book-windows-x64.zip`，没有沿用旧 walkthrough 中 `.agent/workspace/task-104-hardening/` 临时路径。
+
+### 本轮验证
+
+- Catalog/Discovery/Draft Factory/session canonicalizer/runtime/model settings/DTO/Config 聚焦测试通过：新增核心组合 `49/49`、Config/DTO 组合 `74/74`、runtime/auth/compaction/guard `47/47`。
+- session metadata reconcile 专项 `1/1` 通过；payload Harness 文件单独运行 `7/7` 通过。
+- 较宽 Harness 并行组合中 `204/211` 通过，7 个失败均为现有 Windows 测试资源争用/超时形态；其中首个 black-box 用例隔离复跑通过（25s，接近其 30s timeout），没有修改业务代码或放宽超时掩盖。
+- `bun run typecheck`：通过。
+- `bun run nuxt:build`：通过；新 `/api/config/models/catalog` route 已进入 Nitro 输出。
+- `bun run product:stage`：通过。
+- Source archive 与 Windows Portable：通过，输出 `dist/neuro-book-source.zip`、`dist/neuro-book-windows-x64.zip`。
+- `.output`、Product 和 Windows Portable 均核实包含五个 Pi lazy API subpath、`@opentelemetry/api` 与 `@smithy/node-http-handler`。
+- Docker：当前环境无 `docker` 命令，未执行。
+- 真实 Provider smoke：未获凭据授权，未执行。
 - 浏览器验证：按项目约束未自动执行。
 
 ## TODO / Follow-ups
@@ -527,6 +634,6 @@ Exit criteria:
 - [x] Phase 5 Faux tests。
 - [x] Phase 6 integration cleanup 与 guard。
 - [x] Phase 7 typecheck / Nuxt / Product / Windows Portable 验证。
-- [ ] 用户授权后执行真实 Provider smoke。
+- [x] 用户授权后执行真实 Provider smoke；MiMo/DeepSeek、thinking、tool call、compaction、trace-on/off 已覆盖，health-check trace binding 缺口另行修复。
 - [ ] 在具备 Docker CLI 的环境执行 Docker build smoke。
 - [x] 同步 `PROJECT-STATUS.md` 并记录最终验证与残余风险。

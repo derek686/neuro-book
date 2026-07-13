@@ -8,6 +8,7 @@ import {Type} from "typebox";
 import type {Static, TSchema} from "typebox";
 import {Value} from "typebox/value";
 import {NeuroAgentHarness} from "nbook/server/agent/harness/neuro-agent-harness";
+import type {ResolvedPiModel} from "nbook/server/agent/harness/pi-model-metadata";
 import {JsonlSessionRepository} from "nbook/server/agent/session/session-repo";
 import {defineAgentProfile as defineRuntimeAgentProfile} from "nbook/server/agent/profiles/define-agent-profile";
 import {agentRuntimeBuiltins, defineAgentRuntime} from "nbook/server/agent/profiles/define-agent-runtime";
@@ -2819,6 +2820,92 @@ describe("NeuroAgentHarness", () => {
             id: "default-model",
             providerConfigId: "default-provider",
         }));
+    });
+
+    it("同一 selection key 在下一次 invocation 刷新 metadata，且无变化时不重复写 model_change", async () => {
+        await mkdir(join(root, ".nbook"), {recursive: true});
+        await writeFile(join(root, ".nbook", "config.json"), JSON.stringify({
+            models: {
+                default: "local/model-a",
+                providers: [{
+                    id: "local",
+                    name: "Local",
+                    enabled: true,
+                    api: "openai-completions",
+                    options: {
+                        apiKey: "",
+                        baseURL: "http://127.0.0.1:11434/v1",
+                        proxy: "",
+                        timeoutMs: null,
+                        requestOptions: {},
+                    },
+                    models: [{
+                        id: "model-a",
+                        name: "Model A",
+                        enabled: true,
+                        contextWindowTokens: 128000,
+                        maxTokens: 8000,
+                    }],
+                }],
+            },
+        }, null, 4), "utf8");
+        let resolvedModel: ResolvedPiModel = {
+            ...faux.getModel(),
+            id: "model-a",
+            name: "Model A",
+            provider: "registry-a",
+            providerConfigId: "local",
+            baseUrl: "https://old.example/v1",
+            contextWindow: 128000,
+            maxTokens: 8000,
+        };
+        harness = new NeuroAgentHarness({
+            repo: harness.repo,
+            profiles: harness.profiles,
+            modelResolver: () => resolvedModel,
+            runtimeResolver: () => faux.runtime,
+            enableSessionSummarizer: false,
+        });
+        const created = await harness.createAgent({
+            profileKey: "leader.default",
+            initial: {},
+            workspaceRoot: root,
+        });
+        const initialChanges = (await harness.repo.readSession(created.sessionId)).entries
+            .filter((entry) => entry.type === "model_change").length;
+
+        resolvedModel = {
+            ...resolvedModel,
+            baseUrl: "https://new.example/v1",
+            contextWindow: 1048576,
+            maxTokens: 131072,
+            compat: {maxTokensField: "max_tokens"},
+        };
+        faux.setResponses([fauxAssistantMessage("first")]);
+        await harness.invokeAgent({
+            sessionId: created.sessionId,
+            mode: "prompt",
+            message: {text: "refresh metadata"},
+        });
+
+        const refreshedSnapshot = await harness.repo.readSession(created.sessionId);
+        expect(refreshedSnapshot.entries.filter((entry) => entry.type === "model_change")).toHaveLength(initialChanges + 1);
+        expect(harness.repo.reduce(refreshedSnapshot).model).toEqual(expect.objectContaining({
+            providerConfigId: "local",
+            baseUrl: "https://new.example/v1",
+            contextWindow: 1048576,
+            maxTokens: 131072,
+            compat: {maxTokensField: "max_tokens"},
+        }));
+
+        faux.setResponses([fauxAssistantMessage("second")]);
+        await harness.invokeAgent({
+            sessionId: created.sessionId,
+            mode: "prompt",
+            message: {text: "same metadata"},
+        });
+        expect((await harness.repo.readSession(created.sessionId)).entries
+            .filter((entry) => entry.type === "model_change")).toHaveLength(initialChanges + 1);
     });
 
     it("没有可用默认模型时新 session 保持空模型并在运行时报配置错误", async () => {
@@ -6511,7 +6598,7 @@ describe("NeuroAgentHarness", () => {
             lastDialogueContentFingerprint: expect.any(String),
         });
         expect((context.customState["summarizer.state"] as {lastError?: string}).lastError).toBeUndefined();
-    });
+    }, 20_000);
 
     it("rename 命令锁定标题后 summarizer 只更新 summary，summarize 命令解锁并立即重跑", async () => {
         harness = new NeuroAgentHarness({

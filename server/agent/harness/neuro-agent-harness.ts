@@ -21,6 +21,7 @@ import {ToolSessionWriteSink} from "nbook/server/agent/session/tool-session-writ
 import {relationLedgerChange} from "nbook/server/agent/session/relation-ledger";
 import {AGENT_FOLLOW_UP_QUEUE_STATE_KEY, AGENT_MODE_STATE_KEY, AGENT_MODE_UI_STATE_KEY, AGENT_PENDING_USER_RESOLUTION_STATE_PREFIX, SESSION_SUMMARIZER_STATE_KEY, SESSION_TITLE_OWNER_STATE_KEY, readTitleOwner, type SessionTitleOwnerState} from "nbook/server/agent/session/custom-state-keys";
 import type {InvocationErrorInfo, InvocationErrorPhase, ModelChangeEntry, NeuroSessionContext, SessionEntry, SessionEntryDraft, SessionEntryId, SessionSnapshot} from "nbook/server/agent/session/types";
+import {canonicalSessionModel, sessionModelsEqual} from "nbook/server/agent/session/session-model";
 import type {AgentRuntimeHook, AgentRuntimeHookResult, RuntimeSessionFacade} from "nbook/server/agent/profiles/define-agent-runtime";
 import {SkillCatalog} from "nbook/server/agent/skills/skill-catalog";
 import {findPendingApprovalCall, findPendingApprovalCalls, resolutionToToolResult} from "nbook/server/agent/tools/approval";
@@ -64,7 +65,7 @@ import {
     type ProfileTurnContextSettlement,
 } from "nbook/server/agent/profiles/profile-turn-context";
 import {resolvePiApiKeyForModelFromConfig, resolvePiModelFromConfig} from "nbook/server/agent/harness/model-resolver";
-import {isCustomPiRuntimeFromConfig, resolvePiModelsFromConfig} from "nbook/server/agent/harness/pi-runtime-resolver";
+import {resolvePiModelsFromConfig} from "nbook/server/agent/harness/pi-runtime-resolver";
 import {mergePiRequestHeaders, parsePiSimpleRequestOptions, piRequestAuthOptions} from "nbook/server/agent/harness/pi-request-options";
 import {planModeDirectory, resolvePlanModeFile} from "nbook/server/agent/plan-mode-path";
 import {resolveWorkspacePath} from "nbook/server/agent/tools/file-tool-utils";
@@ -205,7 +206,6 @@ type PreparedRun = {
     systemPrompt: string;
     messages: AgentMessage[];
     models: Models;
-    customPiRuntime: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs: number | null;
@@ -230,7 +230,6 @@ type SidecarRunContext = {
     systemPrompt: string;
     messages: AgentMessage[];
     models: Models;
-    customPiRuntime: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs: number | null;
@@ -589,7 +588,7 @@ export class NeuroAgentHarness {
                     kind: "append",
                     entry: {
                         type: "model_change",
-                        model: initialModel,
+                        model: canonicalSessionModel(initialModel),
                     },
                 }],
             });
@@ -756,7 +755,6 @@ export class NeuroAgentHarness {
                     systemPrompt: preparedRun.systemPrompt,
                     messages: preparedRun.messages,
                     models: preparedRun.models,
-                    customPiRuntime: preparedRun.customPiRuntime,
                     model: preparedRun.model,
                     apiKey: preparedRun.apiKey,
                     timeoutMs: preparedRun.timeoutMs,
@@ -807,7 +805,6 @@ export class NeuroAgentHarness {
                 systemPrompt: preparedRun.systemPrompt,
                 messages: preparedRun.messages,
                 models: preparedRun.models,
-                customPiRuntime: preparedRun.customPiRuntime,
                 model: preparedRun.model,
                 apiKey: preparedRun.apiKey,
                 timeoutMs: preparedRun.timeoutMs,
@@ -849,7 +846,6 @@ export class NeuroAgentHarness {
                 profile: preparedRun.profile,
                 sessionContextEnabled: preparedRun.sessionContextEnabled,
                 models: preparedRun.models,
-                customPiRuntime: preparedRun.customPiRuntime,
                 model: preparedRun.model,
                 apiKey: preparedRun.apiKey,
                 timeoutMs: preparedRun.timeoutMs,
@@ -1134,7 +1130,6 @@ export class NeuroAgentHarness {
         profile: AgentProfile;
         sessionContextEnabled: boolean;
         models: Models;
-        customPiRuntime: boolean;
         model: Model<any>;
         apiKey?: string;
         timeoutMs: number | null;
@@ -1163,7 +1158,6 @@ export class NeuroAgentHarness {
                         systemPrompt: context.systemPrompt,
                         messages: context.messages,
                         models: input.models,
-                        customPiRuntime: input.customPiRuntime,
                         model: input.model,
                         apiKey: input.apiKey,
                         timeoutMs: input.timeoutMs,
@@ -1340,7 +1334,6 @@ export class NeuroAgentHarness {
         context = preparedModel.context;
         const model = preparedModel.model ?? this.modelResolver(config, context.profileKey);
         const models = this.runtimeResolver(config, model);
-        const customPiRuntime = isCustomPiRuntimeFromConfig(config, model);
         const providerOptions = this.providerOptions(config, model);
         const apiKey = resolvePiApiKeyForModelFromConfig(config, model);
         const runProfile = await this.profiles.get(context.profileKey);
@@ -1374,7 +1367,6 @@ export class NeuroAgentHarness {
             systemPrompt,
             messages,
             models,
-            customPiRuntime,
             model,
             apiKey,
             timeoutMs: providerOptions.timeoutMs,
@@ -2439,9 +2431,9 @@ export class NeuroAgentHarness {
                 : this.modelResolver(config, context.profileKey);
             const entry: Omit<ModelChangeEntry, "id" | "parentId" | "timestamp"> = {
                 type: "model_change",
-                model: nextModel,
+                model: canonicalSessionModel(nextModel),
             };
-            if (this.modelSelectionKey(context.model) === this.modelSelectionKey(entry.model)) {
+            if (sessionModelsEqual(context.model, entry.model)) {
                 return this.commandLiveStateResult(sessionId, "completed", undefined, timing);
             }
             const result = await this.executeWritePlanResult({
@@ -3460,7 +3452,6 @@ export class NeuroAgentHarness {
         systemPrompt: string;
         messages: AgentMessage[];
         models: Models;
-        customPiRuntime?: boolean;
         model: Model<any>;
         apiKey?: string;
         timeoutMs?: number | null;
@@ -3755,7 +3746,6 @@ export class NeuroAgentHarness {
             modelMessages,
             providerMessages,
             models: frame.models,
-            customPiRuntime: frame.customPiRuntime,
             model: frame.model,
             apiKey: frame.apiKey,
             timeoutMs: frame.timeoutMs,
@@ -3967,7 +3957,6 @@ export class NeuroAgentHarness {
             snapshot: await this.repo.readSession(frame.sessionId, frame.workspaceKey),
             messages: frame.messages,
             models: frame.models,
-            customPiRuntime: frame.customPiRuntime,
             model: frame.model,
             apiKey: frame.apiKey,
             thinkingLevel: frame.thinkingLevel,
@@ -4101,7 +4090,6 @@ export class NeuroAgentHarness {
             ...piRequestAuthOptions({
                 api: input.snapshot.model.api,
                 apiKey: input.snapshot.apiKey,
-                customRuntime: input.snapshot.customPiRuntime === true,
                 env: requestOptions.env,
             }),
             headers: mergePiRequestHeaders(input.snapshot.model.headers, requestOptions.headers),
@@ -5279,11 +5267,14 @@ export class NeuroAgentHarness {
     }
 
     /**
-     * 返回当前 session 实际应展示/使用的有效模型。
+     * 按 session 保存的 selection key 从当前配置重新解析完整 metadata。
+     * key 已删除或禁用时回退当前默认模型；解析成功后由 invocation 冻结该 binding。
      */
     private resolveEffectiveSessionModel(config: Pick<EffectiveConfig, "agent" | "models">, context: NeuroSessionContext): Model<any> | null {
         if (this.sessionModelExists(config, context.model)) {
-            return context.model;
+            return this.modelResolver(config, context.profileKey, {
+                modelKey: this.modelSelectionKey(context.model),
+            });
         }
         return this.resolveConfiguredSessionModel(config, context.profileKey, null);
     }
@@ -5297,7 +5288,7 @@ export class NeuroAgentHarness {
         config: Pick<EffectiveConfig, "agent" | "models">,
     ): Promise<{snapshot: SessionSnapshot; context: NeuroSessionContext; model: Model<any> | null}> {
         const model = this.resolveEffectiveSessionModel(config, context);
-        if (this.modelSelectionKey(context.model) === this.modelSelectionKey(model)) {
+        if (sessionModelsEqual(context.model, model)) {
             return {snapshot, context, model};
         }
         if (!model) {
@@ -5311,7 +5302,7 @@ export class NeuroAgentHarness {
                 kind: "append",
                 entry: {
                     type: "model_change",
-                    model,
+                    model: canonicalSessionModel(model),
                 },
             }],
         });
@@ -5852,12 +5843,14 @@ export class NeuroAgentHarness {
         this.activeInvocations.set(sessionId, activeInvocation);
         await this.writeLifecycle(sessionId, invocationId, "start");
         try {
-            const snapshot = await this.repo.readSession(sessionId);
-            const context = this.repo.reduce(snapshot);
+            let snapshot = await this.repo.readSession(sessionId);
+            let context = this.repo.reduce(snapshot);
             const config = await loadEffectiveConfig(context);
-            const model = this.resolveEffectiveSessionModel(config, context) ?? this.modelResolver(config, context.profileKey);
+            const preparedModel = await this.ensureSessionModelConfigured(snapshot, context, config);
+            snapshot = preparedModel.snapshot;
+            context = preparedModel.context;
+            const model = preparedModel.model ?? this.modelResolver(config, context.profileKey);
             const models = this.runtimeResolver(config, model);
-            const customPiRuntime = isCustomPiRuntimeFromConfig(config, model);
             const providerOptions = this.providerOptions(config, model);
             const thinkingLevel = this.resolveThinkingLevel(context, config, model);
             const profile = await this.profiles.get(context.profileKey);
@@ -5867,7 +5860,6 @@ export class NeuroAgentHarness {
                 snapshot,
                 messages: context.messages,
                 models,
-                customPiRuntime,
                 model,
                 apiKey: resolvePiApiKeyForModelFromConfig(config, model),
                 timeoutMs: providerOptions.timeoutMs,
@@ -6339,7 +6331,6 @@ export class NeuroAgentHarness {
                     sidecarReminder,
                 ],
                 models: sidecarRun.models,
-                customPiRuntime: sidecarRun.customPiRuntime,
                 model: sidecarRun.model,
                 apiKey: sidecarRun.apiKey,
                 timeoutMs: sidecarRun.timeoutMs,

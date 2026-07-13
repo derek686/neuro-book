@@ -6,6 +6,7 @@ import Dialog from "nbook/app/components/common/Dialog.vue";
 import NovelIdeModelSelect from "nbook/app/components/novel-ide/settings/NovelIdeModelSelect.vue";
 import NovelIdeModelEditDialog from "nbook/app/components/novel-ide/settings/NovelIdeModelEditDialog.vue";
 import {clearModelCostDraft, createEmptyModelCostDraft, createModelCostDraft, parseModelCostDraft, type ModelCostDraft} from "nbook/app/components/novel-ide/settings/model-cost-draft";
+import {configuredModelFromCatalog, requiredModelFields, resolveDiscoveredModelDraft} from "nbook/app/components/novel-ide/settings/model-draft-factory";
 import {useNovelIdeStore} from "nbook/app/stores/novel-ide";
 import {useConfigApi} from "nbook/app/composables/useConfigApi";
 import {useNotification} from "nbook/app/composables/useNotification";
@@ -17,18 +18,17 @@ import type {
     DiscoveredProviderModelDto,
     EnabledModelOptionDto,
     ModelInputKind,
+    ModelCatalogEntryDto,
     ModelProviderDraftDto,
-    PiBuiltinCatalogDto,
-    PiBuiltinModelDto,
-    PiBuiltinProviderDto,
+    NeuroModelCatalogDto,
+    ProviderDiscoveryAdapterDto,
+    ProviderPresetDto,
     UpdateModelSettingsRequestDto,
 } from "nbook/shared/dto/app-settings.dto";
 import type {ConfigEditorSnapshotDto, ConfigModelSettingsDto, ConfigWorkspaceQueryDto, GlobalConfigDto, ProjectConfigDto, SecretConfigValueDto} from "nbook/shared/dto/config.dto";
 
 type ProviderRequestOptions = UpdateModelSettingsRequestDto["providers"][number]["options"]["requestOptions"];
 type ConfigSettingsScope = "global" | "project";
-const RUNTIME_DEFAULT_CONTEXT_WINDOW_TOKENS = 256_000;
-const RUNTIME_DEFAULT_MAX_TOKENS = 256_000;
 
 const props = withDefaults(defineProps<{
     scope?: ConfigSettingsScope;
@@ -45,25 +45,15 @@ type ModelDraft = {
     id: string;
     group: string;
     enabled: boolean;
-    provider: string;
     api: string;
-    baseUrl: string;
     reasoning: "inherit" | "true" | "false";
     input: string;
     maxTokens: string;
     cost: ModelCostDraft;
     compat: string;
+    headers: string;
+    thinkingLevelMap: string;
     contextWindowTokens: string;
-};
-
-type EffectiveModelMetadata = {
-    api: string;
-    apiSource: "model" | "provider" | "registry" | "fallback";
-    reasoning: boolean;
-    input: ModelInputKind[];
-    maxTokens: number | null;
-    contextWindowTokens: number | null;
-    cost: NonNullable<ConfiguredModelDto["cost"]>;
 };
 
 type ManualModelDraft = {
@@ -72,6 +62,7 @@ type ManualModelDraft = {
     api: string;
     group: string;
     contextWindowTokens: string;
+    maxTokens: string;
 };
 
 type ProviderDraft = {
@@ -80,6 +71,10 @@ type ProviderDraft = {
     name: string;
     enabled: boolean;
     api: string;
+    discovery: {
+        adapter: ProviderDiscoveryAdapterDto;
+        endpointPath: string;
+    };
     options: {
         apiKey: string;
         apiKeyConfigured: boolean;
@@ -111,67 +106,16 @@ type ModelCheckBatchState = {
     modelKeys: string[];
 };
 
-type ProviderPreset = {
-    value: string;
-    label: string;
-    providerId: string;
-    providerName: string;
-    baseURL: string;
-    description: string;
-};
-
 const {t} = useI18n();
 
-const fallbackProviderPresetOptions = computed<ProviderPreset[]>(() => [
-    {
-        value: "xiaomi-token-plan-cn",
-        label: "Xiaomi Token Plan CN",
-        providerId: "xiaomi-token-plan-cn",
-        providerName: "Xiaomi Token Plan CN",
-        baseURL: "",
-        description: t("settings.panels.models.builtinXiaomiDescription"),
-    },
-    {
-        value: "deepseek",
-        label: "DeepSeek",
-        providerId: "deepseek",
-        providerName: "DeepSeek",
-        baseURL: "",
-        description: t("settings.panels.models.builtinDeepseekDescription"),
-    },
-    {
-        value: "openai",
-        label: "OpenAI",
-        providerId: "openai",
-        providerName: "OpenAI",
-        baseURL: "",
-        description: t("settings.panels.models.builtinOpenaiDescription"),
-    },
-    {
-        value: "openrouter",
-        label: "OpenRouter",
-        providerId: "openrouter",
-        providerName: "OpenRouter",
-        baseURL: "",
-        description: t("settings.panels.models.builtinOpenrouterDescription"),
-    },
-    {
-        value: "google",
-        label: "Google",
-        providerId: "google",
-        providerName: "Google",
-        baseURL: "",
-        description: t("settings.panels.models.builtinGoogleDescription"),
-    },
-    {
-        value: "custom",
-        label: t("settings.panels.models.custom"),
-        providerId: "custom-provider",
-        providerName: "Custom Provider",
-        baseURL: "",
-        description: t("settings.panels.models.customDescription"),
-    },
-]);
+const fallbackProviderPreset: ProviderPresetDto = {
+    id: "custom-openai-completions",
+    name: "Custom OpenAI Completions",
+    baseUrl: "",
+    supportedApis: ["openai-completions"],
+    defaultApi: "openai-completions",
+    discovery: {adapter: "openai-models", endpointPath: null},
+};
 
 const novelIdeStore = useNovelIdeStore();
 const configApi = useConfigApi();
@@ -180,14 +124,14 @@ const notification = useNotification();
 const loading = ref(false);
 const saving = ref(false);
 const activeProviderKey = ref("");
-const selectedPreset = ref<string>(fallbackProviderPresetOptions.value[0]?.value ?? "custom");
+const selectedPreset = ref<string>(fallbackProviderPreset.id);
 const draft = ref<ModelSettingsDraft>({
     defaultModelKey: null,
     providers: [],
 });
 const snapshotText = ref("");
 const discoveredModels = ref<Record<string, DiscoveredProviderModelDto[]>>({});
-const piCatalog = ref<PiBuiltinCatalogDto | null>(null);
+const modelCatalog = ref<NeuroModelCatalogDto | null>(null);
 const resolvedContextWindowMap = ref<Record<string, number | null>>({});
 const providerDiscoveringId = ref("");
 const modelCheckControllers = ref<Record<string, ModelCheckControllerState>>({});
@@ -217,29 +161,21 @@ const modelInputOptions = computed<Array<{value: ModelInputKind; label: string; 
     {value: "image", label: t("settings.panels.models.imageInput"), iconClass: "i-lucide-image"},
 ]);
 
-const providerPresetOptions = computed<ProviderPreset[]>(() => {
-    const builtinPresets = (piCatalog.value?.providers ?? []).map((provider) => ({
-        value: provider.id,
-        label: provider.name === provider.id ? provider.id : `${provider.name} (${provider.id})`,
-        providerId: provider.id,
-        providerName: provider.name,
-        baseURL: provider.baseUrl,
-        description: t("settings.panels.models.builtinProviderDescription", {count: provider.models.length}),
-    }));
-    const customPreset = fallbackProviderPresetOptions.value.find((preset) => preset.value === "custom");
-    return [
-        ...(builtinPresets.length > 0 ? builtinPresets : fallbackProviderPresetOptions.value.filter((preset) => preset.value !== "custom")),
-        ...(customPreset ? [customPreset] : []),
-    ];
-});
+const providerPresetOptions = computed<ProviderPresetDto[]>(() => modelCatalog.value?.providerPresets ?? [fallbackProviderPreset]);
 
 function toggleGroup(group: string): void {
     expandedGroups.value[group] = !expandedGroups.value[group];
 }
 
-function openModelEdit(model: ModelDraft): void {
+async function openModelEdit(model: ModelDraft): Promise<void> {
     editingModel.value = model;
-    modelEditDialogOpen.value = true;
+    try {
+        await loadModelCatalog();
+    } catch (error) {
+        notification.error(resolveApiErrorMessage(error, t("settings.panels.models.loadPiCatalogFailed")));
+    } finally {
+        modelEditDialogOpen.value = true;
+    }
 }
 
 /**
@@ -272,14 +208,14 @@ function cloneModel(model: ConfiguredModelDto): ModelDraft {
         id: model.id,
         group: model.group ?? "",
         enabled: model.enabled,
-        provider: model.provider ?? "",
         api: model.api ?? "",
-        baseUrl: model.baseUrl ?? "",
         reasoning: model.reasoning === null ? "inherit" : model.reasoning ? "true" : "false",
         input: model.input?.join(",") ?? "",
         maxTokens: typeof model.maxTokens === "number" ? String(model.maxTokens) : "",
         cost: createModelCostDraft(model.cost),
         compat: model.compat ? JSON.stringify(model.compat, null, 2) : "",
+        headers: model.headers ? JSON.stringify(model.headers, null, 2) : "",
+        thinkingLevelMap: model.thinkingLevelMap ? JSON.stringify(model.thinkingLevelMap, null, 2) : "",
         contextWindowTokens: typeof model.contextWindowTokens === "number" ? String(model.contextWindowTokens) : "",
     };
 }
@@ -309,7 +245,7 @@ function parseMaxTokens(value: string): number | null {
 }
 
 /**
- * 解析模型输入能力；空值表示继承 Pi registry。
+ * 解析模型输入能力；空值表示能力尚未填写。
  */
 function parseModelInput(value: string): ModelInputKind[] | null {
     const normalized = value.trim();
@@ -323,7 +259,7 @@ function parseModelInput(value: string): ModelInputKind[] | null {
 }
 
 /**
- * 切换模型输入能力；空数组表示继承上游 registry/provider。
+ * 切换模型输入能力；空数组表示能力尚未填写。
  */
 function toggleModelInput(model: ModelDraft, inputKind: ModelInputKind): void {
     const values = parseModelInput(model.input) ?? [];
@@ -333,25 +269,31 @@ function toggleModelInput(model: ModelDraft, inputKind: ModelInputKind): void {
 }
 
 function modelInputEnabled(model: ModelDraft, inputKind: ModelInputKind): boolean {
-    return (parseModelInput(model.input) ?? resolveEffectiveModelMetadata(model).input).includes(inputKind);
+    return (parseModelInput(model.input) ?? []).includes(inputKind);
 }
 
 /**
- * 清空模型价格覆盖，恢复继承 Pi registry。
+ * 清空用户模型配置中的价格。
  */
 function resetModelCost(model: ModelDraft): void {
     clearModelCostDraft(model.cost);
 }
 
 /**
- * 启用原子价格覆盖，并复制当前有效的 Pi registry 基础价格与 tiers。
+ * 从当前 Model Catalog 复制完整基础价格与 tiers。
  */
 function enableModelCostOverride(model: ModelDraft): void {
-    model.cost = createModelCostDraft(resolveEffectiveModelMetadata(model).cost);
+    model.cost = createModelCostDraft(findCatalogModel(model.id)?.cost ?? {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        tiers: [],
+    });
 }
 
 /**
- * 解析模型推理能力；继承表示由 Pi registry 决定。
+ * 解析模型推理能力；inherit 仅表示历史/未完成草稿尚未明确。
  */
 function parseModelReasoning(value: ModelDraft["reasoning"]): boolean | null {
     if (value === "true") {
@@ -364,7 +306,7 @@ function parseModelReasoning(value: ModelDraft["reasoning"]): boolean | null {
 }
 
 /**
- * 解析 Pi compat JSON；空值表示继承 Pi registry 或使用 provider 自动探测。
+ * 解析 Pi compat JSON；空值表示未配置。
  */
 function parseModelCompat(value: string): ConfiguredModelDto["compat"] {
     const normalizedValue = value.trim();
@@ -373,12 +315,42 @@ function parseModelCompat(value: string): ConfiguredModelDto["compat"] {
     }
     try {
         const parsedValue = JSON.parse(normalizedValue);
-        return parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue)
-            ? parsedValue as ConfiguredModelDto["compat"]
-            : null;
-    } catch {
+        if (!parsedValue || typeof parsedValue !== "object" || Array.isArray(parsedValue)) {
+            throw new Error("Compat 必须是 JSON 对象");
+        }
+        return parsedValue as ConfiguredModelDto["compat"];
+    } catch (error) {
+        throw new Error(`Compat JSON 无效：${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/** 解析模型 headers JSON；空值表示未配置。 */
+function parseModelHeaders(value: string): ConfiguredModelDto["headers"] {
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
         return null;
     }
+    try {
+        const parsedValue: unknown = JSON.parse(normalizedValue);
+        if (!parsedValue || typeof parsedValue !== "object" || Array.isArray(parsedValue)) {
+            throw new Error("必须是 JSON 对象");
+        }
+        const headers: Record<string, string | null> = {};
+        for (const [key, headerValue] of Object.entries(parsedValue)) {
+            if (typeof headerValue !== "string" && headerValue !== null) {
+                throw new Error(`字段 ${key} 必须是字符串或 null`);
+            }
+            headers[key] = headerValue;
+        }
+        return headers;
+    } catch (error) {
+        throw new Error(`模型 JSON 映射无效：${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/** 解析 thinking level 映射；空值表示未配置。 */
+function parseThinkingLevelMap(value: string): ConfiguredModelDto["thinkingLevelMap"] {
+    return parseModelHeaders(value);
 }
 
 /**
@@ -409,11 +381,12 @@ function parseProviderRequestOptions(value: string): ProviderRequestOptions {
 
     try {
         const parsedValue = JSON.parse(normalizedValue);
-        return parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue)
-            ? parsedValue as ProviderRequestOptions
-            : {};
-    } catch {
-        return {};
+        if (!parsedValue || typeof parsedValue !== "object" || Array.isArray(parsedValue)) {
+            throw new Error("必须是 JSON 对象");
+        }
+        return parsedValue as ProviderRequestOptions;
+    } catch (error) {
+        throw new Error(`Provider request options JSON 无效：${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -428,6 +401,10 @@ function cloneProvider(provider: ConfigModelSettingsDto["providers"][number], lo
         name: provider.name,
         enabled: provider.enabled,
         api: provider.api ?? "",
+        discovery: {
+            adapter: provider.discovery.adapter,
+            endpointPath: provider.discovery.endpointPath ?? "",
+        },
         options: {
             apiKey: "",
             apiKeyConfigured: provider.options.apiKey.configured,
@@ -454,7 +431,7 @@ function applySettings(snapshot: ConfigEditorSnapshotDto, options: {preserveUiSt
         defaultModelKey: snapshot.modelSettings.defaultModelKey,
         providers: snapshot.modelSettings.providers.map((provider) => cloneProvider(provider, localKeyMap)),
     };
-    snapshotText.value = JSON.stringify(buildSavePayload());
+    snapshotText.value = JSON.stringify(draft.value);
     activeProviderKey.value = draft.value.providers.some((provider) => provider.localKey === preferredProviderKey)
         ? preferredProviderKey
         : draft.value.providers[0]?.localKey ?? "";
@@ -554,6 +531,10 @@ function buildSavePayload(): UpdateModelSettingsRequestDto {
             name: provider.name.trim(),
             enabled: provider.enabled,
             api: provider.api.trim() || null,
+            discovery: {
+                adapter: provider.discovery.adapter,
+                endpointPath: provider.discovery.endpointPath.trim() || null,
+            },
             options: {
                 apiKey: provider.options.apiKey.trim(),
                 baseURL: provider.options.baseURL.trim(),
@@ -566,14 +547,14 @@ function buildSavePayload(): UpdateModelSettingsRequestDto {
                 id: model.id.trim(),
                 group: model.group.trim() || null,
                 enabled: model.enabled,
-                provider: model.provider.trim() || null,
                 api: model.api.trim() || null,
-                baseUrl: model.baseUrl.trim() || null,
                 reasoning: parseModelReasoning(model.reasoning),
                 input: parseModelInput(model.input),
                 maxTokens: parseMaxTokens(model.maxTokens),
                 cost: parseModelCostDraft(model.cost),
                 compat: parseModelCompat(model.compat),
+                headers: parseModelHeaders(model.headers),
+                thinkingLevelMap: parseThinkingLevelMap(model.thinkingLevelMap),
                 contextWindowTokens: parseContextWindowTokens(model.contextWindowTokens),
             })),
         })),
@@ -596,6 +577,10 @@ function buildGlobalConfigPayload(): GlobalConfigDto {
                 name: provider.name.trim(),
                 enabled: provider.enabled,
                 api: provider.api.trim() || null,
+                discovery: {
+                    adapter: provider.discovery.adapter,
+                    endpointPath: provider.discovery.endpointPath.trim() || null,
+                },
                 options: {
                     apiKey: buildSecretPayload(provider),
                     baseURL: provider.options.baseURL.trim(),
@@ -608,14 +593,14 @@ function buildGlobalConfigPayload(): GlobalConfigDto {
                     id: model.id.trim(),
                     group: model.group.trim() || null,
                     enabled: model.enabled,
-                    provider: model.provider.trim() || null,
                     api: model.api.trim() || null,
-                    baseUrl: model.baseUrl.trim() || null,
                     reasoning: parseModelReasoning(model.reasoning),
                     input: parseModelInput(model.input),
                     maxTokens: parseMaxTokens(model.maxTokens),
                     cost: parseModelCostDraft(model.cost),
                     compat: parseModelCompat(model.compat),
+                    headers: parseModelHeaders(model.headers),
+                    thinkingLevelMap: parseThinkingLevelMap(model.thinkingLevelMap),
                     contextWindowTokens: parseContextWindowTokens(model.contextWindowTokens),
                 })),
             })),
@@ -798,7 +783,7 @@ async function loadSettings(): Promise<void> {
 
     try {
         if (!isProjectScope.value) {
-            void loadPiCatalog();
+            void loadModelCatalog();
         }
         const snapshot = await configApi.editorSnapshot(props.targetQuery);
         editorSnapshot.value = snapshot;
@@ -916,7 +901,7 @@ const dirty = computed(() => {
             defaultModelKey: draft.value.defaultModelKey,
         }) !== snapshotText.value;
     }
-    return projectReferencesDirty.value || JSON.stringify(buildSavePayload()) !== snapshotText.value;
+    return projectReferencesDirty.value || JSON.stringify(draft.value) !== snapshotText.value;
 });
 
 /**
@@ -1006,71 +991,55 @@ function getManualModelDraft(providerId: string): ManualModelDraft {
             api: "",
             group: "",
             contextWindowTokens: "",
+            maxTokens: "",
         };
     }
 
     return manualModelDrafts.value[providerId];
 }
 
-/**
- * 显示模型实际配置的 Pi API 继承关系。
- */
-function displayModelApi(model: ModelDraft, provider: ProviderDraft | null = activeProvider.value): string {
-    return resolveEffectiveModelMetadata(model, provider).api;
+function displayModelApi(model: ModelDraft): string {
+    return model.api.trim() || t("settings.panels.models.notConfigured");
 }
 
-function displayModelApiSource(model: ModelDraft, provider: ProviderDraft | null = activeProvider.value): string {
-    const source = resolveEffectiveModelMetadata(model, provider).apiSource;
-    if (source === "model") {
-        return t("settings.panels.models.modelApiSourceModel");
-    }
-    if (source === "provider") {
-        return t("settings.panels.models.modelApiSourceProvider");
-    }
-    if (source === "registry") {
-        return t("settings.panels.models.modelApiSourceRegistry");
-    }
-    return t("settings.panels.models.modelApiSourceFallback");
+function displayModelApiSource(model: ModelDraft): string {
+    return model.api.trim() ? t("settings.panels.models.modelApiSourceModel") : t("settings.panels.models.modelApiSourceMissing");
 }
 
-/**
- * 查找模型对应的 Pi registry 元数据，优先按模型级 provider，再回退配置 ID。
- */
-function findPiModelForDraft(model: ModelDraft, provider: ProviderDraft | null = activeProvider.value): PiBuiltinModelDto | null {
-    const providerId = model.provider.trim() || provider?.id.trim() || "";
-    return piCatalog.value?.providers
-        .find((item) => item.id === providerId)
-        ?.models.find((item) => item.id === model.id)
-        ?? null;
+/** 按精确 model ID 查询 NeuroBook 唯一标准 Model Catalog。 */
+function findCatalogModel(modelId: string): ModelCatalogEntryDto | null {
+    return modelCatalog.value?.models.find((model) => model.id === modelId.trim()) ?? null;
 }
 
-/** 当前编辑模型从 Pi registry 继承的价格；无匹配项时不伪造零价格。 */
-const editingModelInheritedCost = computed(() => editingModel.value
-    ? findPiModelForDraft(editingModel.value)?.cost ?? null
-    : null);
+const editingModelCatalogCost = computed(() => editingModel.value ? findCatalogModel(editingModel.value.id)?.cost ?? null : null);
+const editingCatalogModel = computed(() => editingModel.value ? findCatalogModel(editingModel.value.id) : null);
+const editingModelMissingFields = computed(() => editingModel.value ? requiredModelFields(buildModelCheckDraft(editingModel.value)) : []);
 
-/**
- * 计算模型最终生效的 Pi 元数据，用于把“继承”显示成具体值。
- */
-function resolveEffectiveModelMetadata(model: ModelDraft, provider: ProviderDraft | null = activeProvider.value): EffectiveModelMetadata {
-    const piModel = findPiModelForDraft(model, provider);
-    const parsedInput = parseModelInput(model.input);
-    const parsedMaxTokens = parseMaxTokens(model.maxTokens);
-    const parsedContextWindow = parseContextWindowTokens(model.contextWindowTokens);
-    return {
-        api: model.api.trim() || provider?.api.trim() || piModel?.api || "openai-completions",
-        apiSource: model.api.trim() ? "model" : provider?.api.trim() ? "provider" : piModel?.api ? "registry" : "fallback",
-        reasoning: parseModelReasoning(model.reasoning) ?? piModel?.reasoning ?? false,
-        input: parsedInput ?? piModel?.input ?? ["text"],
-        maxTokens: parsedMaxTokens ?? piModel?.maxTokens ?? null,
-        contextWindowTokens: parsedContextWindow ?? piModel?.contextWindowTokens ?? null,
-        cost: piModel?.cost ?? {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, tiers: []},
-    };
+/** 用当前标准 Catalog 能力块完整覆盖模型能力，不修改名称、分组和启用状态。 */
+function reapplyCatalogModel(model: ModelDraft): void {
+    const catalogModel = findCatalogModel(model.id);
+    if (!catalogModel) {
+        notification.warning(t("settings.panels.models.noCatalogMetadata"));
+        return;
+    }
+    const catalogDraft = cloneCatalogModel(catalogModel, model.api || activeProvider.value?.api || null);
+    Object.assign(model, {
+        api: catalogDraft.api,
+        reasoning: catalogDraft.reasoning,
+        input: catalogDraft.input,
+        maxTokens: catalogDraft.maxTokens,
+        cost: catalogDraft.cost,
+        compat: catalogDraft.compat,
+        headers: catalogDraft.headers,
+        thinkingLevelMap: catalogDraft.thinkingLevelMap,
+        contextWindowTokens: catalogDraft.contextWindowTokens,
+    });
 }
 
 function providerDefaultApiLabel(provider: ProviderDraft): string {
-    const registryApi = findPiProvider(provider.id)?.models[0]?.api ?? "openai-completions";
-    return t("settings.panels.models.providerDefaultApi", {api: registryApi});
+    return provider.api.trim()
+        ? t("settings.panels.models.inheritProviderApi", {api: provider.api.trim()})
+        : t("settings.panels.models.metadataOrRequiredApi");
 }
 
 function modelApiInheritLabel(model: ModelDraft): string {
@@ -1078,17 +1047,18 @@ function modelApiInheritLabel(model: ModelDraft): string {
     if (providerApi) {
         return t("settings.panels.models.inheritProviderApi", {api: providerApi});
     }
-    return t("settings.panels.models.providerDefaultApi", {api: resolveEffectiveModelMetadata(model).api});
+    return model.api.trim() || t("settings.panels.modelEdit.requiredForCustomModel");
 }
 
 function modelInputDisplayLabel(model: ModelDraft): string {
-    return resolveEffectiveModelMetadata(model).input
+    return (parseModelInput(model.input) ?? [])
         .map((item) => modelInputOptions.value.find((option) => option.value === item)?.label ?? item)
         .join(" / ");
 }
 
 function modelReasoningDisplayLabel(model: ModelDraft): string {
-    return resolveEffectiveModelMetadata(model).reasoning ? t("settings.panels.models.supported") : t("settings.panels.models.unsupported");
+    const reasoning = parseModelReasoning(model.reasoning);
+    return reasoning === null ? t("settings.panels.models.unknown") : reasoning ? t("settings.panels.models.supported") : t("settings.panels.models.unsupported");
 }
 
 function formatTokenLimit(value: number | null | undefined): string {
@@ -1099,17 +1069,15 @@ function formatTokenLimit(value: number | null | undefined): string {
 }
 
 function modelContextWindowDefaultLabel(model: ModelDraft): string {
-    const piModel = findPiModelForDraft(model);
-    const value = piModel?.contextWindowTokens ?? RUNTIME_DEFAULT_CONTEXT_WINDOW_TOKENS;
-    const source = piModel?.contextWindowTokens ? "Pi" : t("settings.panels.models.runtimeDefault");
-    return `${formatTokenLimit(value)} tokens（${source}）`;
+    return parseContextWindowTokens(model.contextWindowTokens)
+        ? `${formatTokenLimit(parseContextWindowTokens(model.contextWindowTokens))} tokens`
+        : t("settings.panels.modelEdit.requiredForCustomModel");
 }
 
 function modelMaxTokensDefaultLabel(model: ModelDraft): string {
-    const piModel = findPiModelForDraft(model);
-    const value = piModel?.maxTokens ?? RUNTIME_DEFAULT_MAX_TOKENS;
-    const source = piModel?.maxTokens ? "Pi" : t("settings.panels.models.runtimeDefault");
-    return `${formatTokenLimit(value)} tokens（${source}）`;
+    return parseMaxTokens(model.maxTokens)
+        ? `${formatTokenLimit(parseMaxTokens(model.maxTokens))} tokens`
+        : t("settings.panels.modelEdit.requiredForCustomModel");
 }
 
 /**
@@ -1123,44 +1091,23 @@ function updateManualModelId(providerId: string, modelId: string): void {
 /**
  * 懒加载 Pi 内置模型目录。
  */
-async function loadPiCatalog(): Promise<PiBuiltinCatalogDto> {
-    if (!piCatalog.value) {
-        piCatalog.value = await configApi.piModelCatalog();
-        if (!providerPresetOptions.value.some((preset) => preset.value === selectedPreset.value)) {
-            selectedPreset.value = providerPresetOptions.value[0]?.value ?? "custom";
+async function loadModelCatalog(): Promise<NeuroModelCatalogDto> {
+    if (!modelCatalog.value) {
+        modelCatalog.value = await configApi.modelCatalog();
+        if (!providerPresetOptions.value.some((preset) => preset.id === selectedPreset.value)) {
+            selectedPreset.value = providerPresetOptions.value[0]?.id ?? fallbackProviderPreset.id;
         }
     }
-    return piCatalog.value;
+    return modelCatalog.value;
 }
 
-/**
- * 查找 Pi 内置 Provider。
- */
-function findPiProvider(providerId: string): PiBuiltinProviderDto | null {
-    return piCatalog.value?.providers.find((provider) => provider.id === providerId) ?? null;
-}
-
-/**
- * 把 Pi 内置模型转成可写入配置的模型草稿。
- */
-function clonePiModel(model: PiBuiltinModelDto): ModelDraft {
-    const providerId = activeProvider.value?.id.trim() ?? "";
-    const usesSameRegistryProvider = !providerId || providerId === model.provider;
-    return {
-        name: model.name,
-        id: model.id,
+/** 把标准 Catalog 模型复制为完整、自包含的用户模型草稿。 */
+function cloneCatalogModel(model: ModelCatalogEntryDto, providerApi: string | null): ModelDraft {
+    return cloneModel(configuredModelFromCatalog(model, {
         group: deriveGroup(model.id),
         enabled: false,
-        provider: usesSameRegistryProvider ? "" : model.provider,
-        api: "",
-        baseUrl: "",
-        reasoning: model.reasoning ? "true" : "false",
-        input: model.input.join(","),
-        maxTokens: String(model.maxTokens),
-        cost: createEmptyModelCostDraft(),
-        compat: model.compat ? JSON.stringify(model.compat, null, 2) : "",
-        contextWindowTokens: String(model.contextWindowTokens),
-    };
+        providerApi,
+    }));
 }
 
 /**
@@ -1168,30 +1115,32 @@ function clonePiModel(model: PiBuiltinModelDto): ModelDraft {
  */
 async function addProvider(): Promise<void> {
     try {
-        await loadPiCatalog();
+        await loadModelCatalog();
     } catch (error) {
         notification.error(resolveApiErrorMessage(error, t("settings.panels.models.loadPiCatalogFailed")));
         return;
     }
-    const preset = providerPresetOptions.value.find((item) => item.value === selectedPreset.value) ?? providerPresetOptions.value[0];
+    const preset = providerPresetOptions.value.find((item) => item.id === selectedPreset.value) ?? providerPresetOptions.value[0];
     if (!preset) {
         return;
     }
 
-    const builtinProvider = findPiProvider(preset.providerId);
-    const providerId = buildUniqueProviderId(preset.providerId);
-    const baseURL = preset.baseURL || builtinProvider?.baseUrl || "";
+    const providerId = buildUniqueProviderId(preset.id.replace(/^custom-/u, "custom-"));
     const localKey = createProviderLocalKey(providerId);
     activeProviderKey.value = localKey;
     draft.value.providers.push({
         localKey,
         id: providerId,
-        name: preset.providerName,
+        name: preset.name,
         enabled: true,
-        api: "",
+        api: preset.defaultApi ?? "",
+        discovery: {
+            adapter: preset.discovery.adapter,
+            endpointPath: preset.discovery.endpointPath ?? "",
+        },
         options: {
             apiKey: "",
-            baseURL,
+            baseURL: preset.baseUrl,
             proxy: "",
             timeoutMs: "",
             requestOptions: "",
@@ -1199,9 +1148,9 @@ async function addProvider(): Promise<void> {
             apiKeyMaskedValue: null,
             apiKeyCleared: false,
         },
-        models: builtinProvider?.models.map(clonePiModel) ?? [],
+        models: [],
     });
-    notification.success(t("settings.panels.models.providerAdded", {label: preset.label}));
+    notification.success(t("settings.panels.models.providerAdded", {label: preset.name}));
 }
 
 /**
@@ -1392,6 +1341,10 @@ function buildProviderRequest(provider: ProviderDraft): {provider: ModelProvider
             id: provider.id.trim(),
             name: provider.name.trim(),
             api: provider.api.trim() || null,
+            discovery: {
+                adapter: provider.discovery.adapter,
+                endpointPath: provider.discovery.endpointPath.trim() || null,
+            },
             options: {
                 apiKey: provider.options.apiKey.trim(),
                 baseURL: provider.options.baseURL.trim(),
@@ -1412,14 +1365,14 @@ function buildModelCheckDraft(model: ModelDraft): Omit<ConfiguredModelDto, "enab
         name: model.name.trim(),
         id: model.id.trim(),
         group: model.group.trim() || null,
-        provider: model.provider.trim() || null,
         api: model.api.trim() || null,
-        baseUrl: model.baseUrl.trim() || null,
         reasoning: parseModelReasoning(model.reasoning),
         input: parseModelInput(model.input),
         maxTokens: parseMaxTokens(model.maxTokens),
         cost: parseModelCostDraft(model.cost),
         compat: parseModelCompat(model.compat),
+        headers: parseModelHeaders(model.headers),
+        thinkingLevelMap: parseThinkingLevelMap(model.thinkingLevelMap),
         contextWindowTokens: parseContextWindowTokens(model.contextWindowTokens),
     };
 }
@@ -1436,21 +1389,11 @@ async function discoverModels(): Promise<void> {
     providerDiscoveringId.value = provider.id;
 
     try {
-        const catalog = await loadPiCatalog();
-        const builtinProvider = catalog.providers.find((item) => item.id === provider.id);
-        const result: DiscoverProviderModelsResponseDto = builtinProvider
-            ? {
-                models: builtinProvider.models.map((model) => ({
-                    id: model.id,
-                    name: model.name,
-                    group: deriveGroup(model.id),
-                })),
-                message: t("settings.panels.models.builtinModelsLoaded", {count: builtinProvider.models.length}),
-            }
-            : await $fetch<DiscoverProviderModelsResponseDto>("/api/config/models/provider-discover", {
-                method: "POST",
-                body: buildProviderRequest(provider),
-            });
+        await loadModelCatalog();
+        const result = await $fetch<DiscoverProviderModelsResponseDto>("/api/config/models/provider-discover", {
+            method: "POST",
+            body: buildProviderRequest(provider),
+        });
         discoveredModels.value = {
             ...discoveredModels.value,
             [provider.id]: result.models,
@@ -1466,67 +1409,26 @@ async function discoverModels(): Promise<void> {
 /**
  * 启用或新增模型。
  */
-function enableModel(model: {
-    name: string;
-    id: string;
-    group: string | null | undefined;
-    api?: string | null | undefined;
-    provider?: string | null | undefined;
-    baseUrl?: string | null | undefined;
-    reasoning?: boolean | null | undefined;
-    input?: ModelInputKind[] | null | undefined;
-    maxTokens?: string | number | null | undefined;
-    cost?: ConfiguredModelDto["cost"] | undefined;
-    compat?: Record<string, unknown> | null | undefined;
-    contextWindowTokens?: string | number | null | undefined;
-}): void {
+function enableModel(model: ConfiguredModelDto): ModelDraft | null {
     const provider = activeProvider.value;
     if (!provider) {
-        return;
+        return null;
     }
 
     const modelId = model.id.trim();
     if (!modelId) {
-        return;
+        return null;
     }
 
     const existingModel = provider.models.find((item) => item.id === modelId);
     if (existingModel) {
-        existingModel.name = model.name.trim() || modelId;
-        existingModel.group = model.group?.trim() ?? "";
-        existingModel.enabled = true;
-        existingModel.provider = model.provider?.trim() ?? existingModel.provider;
-        existingModel.api = model.api?.trim() ?? existingModel.api;
-        existingModel.baseUrl = model.baseUrl?.trim() ?? existingModel.baseUrl;
-        existingModel.reasoning = typeof model.reasoning === "boolean" ? (model.reasoning ? "true" : "false") : existingModel.reasoning;
-        existingModel.input = model.input?.join(",") ?? existingModel.input;
-        existingModel.maxTokens = typeof model.maxTokens === "number" ? String(model.maxTokens) : model.maxTokens?.trim() ?? existingModel.maxTokens;
-        existingModel.cost = model.cost ? createModelCostDraft(model.cost) : existingModel.cost;
-        existingModel.compat = model.compat ? JSON.stringify(model.compat, null, 2) : existingModel.compat;
-        existingModel.contextWindowTokens = typeof model.contextWindowTokens === "number"
-            ? String(model.contextWindowTokens)
-            : model.contextWindowTokens?.trim() ?? "";
+        Object.assign(existingModel, cloneModel(model));
     } else {
-        provider.models.push({
-            name: model.name.trim() || modelId,
-            id: modelId,
-            group: model.group?.trim() ?? "",
-            enabled: true,
-            provider: model.provider?.trim() ?? "",
-            api: model.api?.trim() ?? "",
-            baseUrl: model.baseUrl?.trim() ?? "",
-            reasoning: typeof model.reasoning === "boolean" ? (model.reasoning ? "true" : "false") : "inherit",
-            input: model.input?.join(",") ?? "",
-            maxTokens: typeof model.maxTokens === "number" ? String(model.maxTokens) : model.maxTokens?.trim() ?? "",
-            cost: model.cost ? createModelCostDraft(model.cost) : createEmptyModelCostDraft(),
-            compat: model.compat ? JSON.stringify(model.compat, null, 2) : "",
-            contextWindowTokens: typeof model.contextWindowTokens === "number"
-                ? String(model.contextWindowTokens)
-                : model.contextWindowTokens?.trim() ?? "",
-        });
+        provider.models.push(cloneModel(model));
     }
 
     ensureDefaultModelKey();
+    return provider.models.find((item) => item.id === modelId) ?? null;
 }
 
 /**
@@ -1556,13 +1458,23 @@ function addManualModel(): void {
         return;
     }
 
-    enableModel({
+    const catalogModel = findCatalogModel(manualDraft.id);
+    const discovered: DiscoveredProviderModelDto = {
         name: manualDraft.name,
         id: manualDraft.id,
-        api: manualDraft.api || null,
-        group: manualDraft.group,
-        contextWindowTokens: manualDraft.contextWindowTokens,
-    });
+        api: manualDraft.api || provider.api || null,
+        group: manualDraft.group || null,
+        reasoning: null,
+        input: null,
+        contextWindowTokens: parseContextWindowTokens(manualDraft.contextWindowTokens),
+        maxTokens: parseMaxTokens(manualDraft.maxTokens),
+        cost: null,
+        compat: null,
+        headers: null,
+        thinkingLevelMap: null,
+    };
+    const resolved = resolveDiscoveredModelDraft(discovered, catalogModel, provider.api || null);
+    const added = enableModel(resolved.model);
 
     manualModelDrafts.value = {
         ...manualModelDrafts.value,
@@ -1572,8 +1484,12 @@ function addManualModel(): void {
             api: "",
             group: "",
             contextWindowTokens: "",
+            maxTokens: "",
         },
     };
+    if (added && resolved.source === "incomplete") {
+        void openModelEdit(added);
+    }
     notification.success(t("settings.panels.models.manualAdded"));
 }
 
@@ -1790,17 +1706,6 @@ const currentDiscoveredModels = computed(() => {
 });
 
 /**
- * 查找当前 Provider 对应的 Pi 内置模型。
- */
-function findCurrentPiModel(modelId: string): PiBuiltinModelDto | null {
-    const provider = activeProvider.value;
-    if (!provider) {
-        return null;
-    }
-    return findPiProvider(provider.id)?.models.find((model) => model.id === modelId) ?? null;
-}
-
-/**
  * 获取远程抓取模型的当前状态。
  */
 function resolveDiscoveredModelState(modelId: string): "enabled" | "disabled" | "missing" {
@@ -1823,23 +1728,44 @@ const unifiedLibraryGroups = computed(() => {
     const provider = activeProvider.value;
     if (!provider) return [];
     
-    const allModelsMap = new Map<string, { name: string; id: string; group: string; state: 'enabled' | 'disabled' | 'remote'; builtinModel?: PiBuiltinModelDto | null }>();
+    const allModelsMap = new Map<string, {name: string; id: string; group: string; state: "enabled" | "disabled" | "remote"; draftModel?: ConfiguredModelDto}>();
     
     for (const rm of currentDiscoveredModels.value) {
-        const builtinModel = findCurrentPiModel(rm.id);
+        const resolved = resolveDiscoveredModelDraft(rm, findCatalogModel(rm.id), provider.api || null);
         const group = rm.group || deriveGroup(rm.id);
         allModelsMap.set(rm.id, {
             name: rm.name,
             id: rm.id,
             group,
             state: resolveDiscoveredModelState(rm.id) === 'enabled' ? 'enabled' : 'remote',
-            builtinModel,
+            draftModel: resolved.model,
+        });
+    }
+
+    for (const catalogModel of modelCatalog.value?.models ?? []) {
+        if (allModelsMap.has(catalogModel.id)) {
+            continue;
+        }
+        const catalogDraft = cloneCatalogModel(catalogModel, provider.api || null);
+        allModelsMap.set(catalogModel.id, {
+            name: catalogModel.name,
+            id: catalogModel.id,
+            group: deriveGroup(catalogModel.id),
+            state: "remote",
+            draftModel: {...buildModelCheckDraft(catalogDraft), enabled: true},
         });
     }
     
     for (const m of disabledModels.value) {
         const group = m.group.trim() || deriveGroup(m.id);
-        allModelsMap.set(m.id, { name: m.name, id: m.id, group, state: 'disabled' });
+        const draftModel = buildModelCheckDraft(m);
+        allModelsMap.set(m.id, {
+            name: m.name,
+            id: m.id,
+            group,
+            state: "disabled",
+            draftModel: {...draftModel, enabled: requiredModelFields(draftModel).length === 0},
+        });
     }
     
     for (const m of provider.models.filter(m => m.enabled)) {
@@ -1849,7 +1775,7 @@ const unifiedLibraryGroups = computed(() => {
 
     const query = librarySearchQuery.value.toLowerCase().trim();
     
-    const groupMap = new Map<string, Array<{ name: string; id: string; group: string; state: string; builtinModel?: PiBuiltinModelDto | null }>>();
+    const groupMap = new Map<string, Array<{name: string; id: string; group: string; state: string; draftModel?: ConfiguredModelDto}>>();
     for (const model of allModelsMap.values()) {
         if (query && !model.name.toLowerCase().includes(query) && !model.id.toLowerCase().includes(query)) {
             continue;
@@ -1872,26 +1798,37 @@ function toggleLibraryGroup(group: string) {
     libraryExpandedGroups.value[group] = !libraryExpandedGroups.value[group];
 }
 
-function toggleLibraryModel(model: { name: string; id: string; group: string; state: string; builtinModel?: PiBuiltinModelDto | null }) {
+function toggleLibraryModel(model: {name: string; id: string; group: string; state: string; draftModel?: ConfiguredModelDto}) {
     if (model.state === 'enabled') {
         const existing = activeProvider.value?.models.find(m => m.id === model.id);
         if (existing) disableModel(existing);
     } else {
-        enableModel(model.builtinModel
-            ? {
-                name: model.builtinModel.name,
-                id: model.builtinModel.id,
-                group: model.group,
-                provider: activeProvider.value?.id === model.builtinModel.provider ? null : model.builtinModel.provider,
-                api: null,
-                baseUrl: null,
-                reasoning: model.builtinModel.reasoning,
-                input: model.builtinModel.input,
-                maxTokens: model.builtinModel.maxTokens,
-                compat: model.builtinModel.compat,
-                contextWindowTokens: model.builtinModel.contextWindowTokens,
+        if (model.state === "disabled" && !(model.draftModel?.enabled ?? false)) {
+            const existing = activeProvider.value?.models.find((item) => item.id === model.id);
+            if (existing) {
+                void openModelEdit(existing);
             }
-            : model);
+            return;
+        }
+        const fallbackModel: ConfiguredModelDto = {
+            name: model.name,
+            id: model.id,
+            group: model.group,
+            enabled: false,
+            api: activeProvider.value?.api || null,
+            reasoning: null,
+            input: null,
+            maxTokens: null,
+            cost: null,
+            compat: null,
+            headers: null,
+            thinkingLevelMap: null,
+            contextWindowTokens: null,
+        };
+        const enabled = enableModel(model.draftModel ?? fallbackModel);
+        if (enabled && !(model.draftModel?.enabled ?? false)) {
+            void openModelEdit(enabled);
+        }
     }
 }
 
@@ -1963,7 +1900,7 @@ defineExpose({
                 </div>
                 <div class="flex items-center gap-2">
                     <div class="min-w-0 flex-1">
-                        <FormSelect :model-value="selectedPreset" :options="providerPresetOptions.map((item) => ({ value: item.value, label: item.label }))" @update:model-value="selectedPreset = $event" />
+                        <FormSelect :model-value="selectedPreset" :options="providerPresetOptions.map((item) => ({value: item.id, label: item.name}))" @update:model-value="selectedPreset = $event" />
                     </div>
                     <button class="inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-color)] bg-[var(--bg-panel)] px-3 text-xs font-medium text-[var(--text-main)] shadow-sm transition-colors hover:bg-[var(--bg-hover)] active:scale-95" @click="void addProvider()">
                         <span class="i-lucide-plus mr-1 h-3 w-3"></span>
@@ -2087,6 +2024,19 @@ defineExpose({
                                 <div class="group space-y-1.5 md:col-span-2">
                                     <label class="text-xs font-medium text-[var(--text-secondary)] transition-colors group-focus-within:text-[var(--text-main)]">{{ t("settings.panels.models.requestOptions") }}</label>
                                     <textarea v-model="activeProvider.options.requestOptions" rows="4" placeholder="{&quot;store&quot;:false}" class="w-full resize-y rounded-md border border-[var(--border-color)] bg-[var(--bg-input)] px-2.5 py-2 font-mono text-[12px] text-[var(--text-main)] outline-none transition-colors placeholder:text-[var(--text-muted)] placeholder:opacity-80 focus:border-[var(--accent-main)] focus:ring-1 focus:ring-[var(--accent-main)]/20"></textarea>
+                                </div>
+                                <div class="group space-y-1.5">
+                                    <label class="text-xs font-medium text-[var(--text-secondary)]">Discovery Adapter</label>
+                                    <FormSelect v-model="activeProvider.discovery.adapter" :options="[
+                                        {value: 'openai-models', label: 'OpenAI-compatible /models'},
+                                        {value: 'openrouter-models', label: 'OpenRouter Models'},
+                                        {value: 'google-models', label: 'Google Models'},
+                                        {value: 'none', label: 'Manual only'},
+                                    ]" />
+                                </div>
+                                <div class="group space-y-1.5">
+                                    <label class="text-xs font-medium text-[var(--text-secondary)]">Discovery Endpoint Path</label>
+                                    <FormInput v-model="activeProvider.discovery.endpointPath" placeholder="/models" />
                                 </div>
                             </div>
                         </div>
@@ -2270,8 +2220,8 @@ defineExpose({
                     <div class="w-[190px]">
                         <FormSelect v-model="getManualModelDraft(activeProvider.id).api" :options="[{value: '', label: activeProvider.api ? t('settings.panels.models.inheritProviderApi', {api: activeProvider.api}) : providerDefaultApiLabel(activeProvider)}, ...modelApiOptions]" :placeholder="t('settings.panels.models.apiFormat')" />
                     </div>
-                    <FormInput v-model="getManualModelDraft(activeProvider.id).api" :placeholder="t('settings.panels.models.customApiFormat')" class="w-[180px] bg-[var(--bg-panel)] shadow-sm !h-8 !text-xs" />
                     <FormInput v-model="getManualModelDraft(activeProvider.id).contextWindowTokens" :placeholder="t('settings.panels.models.contextWindow')" class="w-[120px] bg-[var(--bg-panel)] shadow-sm !h-8 !text-xs" />
+                    <FormInput v-model="getManualModelDraft(activeProvider.id).maxTokens" :placeholder="t('settings.panels.models.maxTokens')" class="w-[120px] bg-[var(--bg-panel)] shadow-sm !h-8 !text-xs" />
                     <button class="inline-flex h-8 shrink-0 items-center justify-center rounded-md bg-[var(--accent-main)] px-3 text-xs font-medium text-[var(--text-inverse)] shadow-sm transition-all hover:opacity-90 active:scale-95" @click="addManualModel">
                         {{ t("settings.panels.models.add") }}
                     </button>
@@ -2298,7 +2248,9 @@ defineExpose({
         v-model="modelEditDialogOpen"
         :editing-model="editingModel"
         :active-provider="activeProvider"
-        :inherited-cost="editingModelInheritedCost"
+        :catalog-cost="editingModelCatalogCost"
+        :catalog-model="editingCatalogModel"
+        :missing-fields="editingModelMissingFields"
         :model-api-options="modelApiOptions"
         :model-input-options="modelInputOptions"
         :derive-group="deriveGroup"
@@ -2314,6 +2266,7 @@ defineExpose({
         @reset-model-input="($event) => { $event.input = ''; }"
         @reset-model-cost="resetModelCost"
         @enable-model-cost="enableModelCostOverride"
+        @reapply-catalog="reapplyCatalogModel"
     />
 </template>
 

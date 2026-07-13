@@ -6,7 +6,6 @@ import {
     lazyApi,
 } from "@earendil-works/pi-ai";
 import type {Api, Models, Model, ProviderStreams} from "@earendil-works/pi-ai";
-import {builtinModels} from "@earendil-works/pi-ai/providers/all";
 import type {EffectiveConfig} from "nbook/server/config/types";
 
 export const SUPPORTED_CUSTOM_PI_APIS = [
@@ -19,7 +18,6 @@ export const SUPPORTED_CUSTOM_PI_APIS = [
 
 export type SupportedCustomPiApi = typeof SUPPORTED_CUSTOM_PI_APIS[number];
 
-const BUILTIN_MODELS = builtinModels();
 const CUSTOM_API_STREAMS = {
     "openai-completions": lazyApi(() => import("@earendil-works/pi-ai/api/openai-completions")),
     "openai-responses": lazyApi(() => import("@earendil-works/pi-ai/api/openai-responses")),
@@ -38,15 +36,15 @@ export function isSupportedCustomPiApi(api: string): api is SupportedCustomPiApi
 /**
  * 为当前冻结配置和已解析模型选择 Pi runtime。
  *
- * 内置 Provider 共用进程级 Models；显式 API override、未知 Provider 或内置 Provider
- * 无法执行的 API 使用独立 Models，避免同类本地连接共享可变 Provider 状态。
+ * 每个用户 Provider Config 都创建独立 Models + Provider；运行时不读取 builtin catalog。
  */
 export function resolvePiModelsFromConfig(
     config: Pick<EffectiveConfig, "models">,
     model: Model<Api>,
 ): Models {
-    if (!isCustomPiRuntimeFromConfig(config, model)) {
-        return BUILTIN_MODELS;
+    const provider = config.models.providers[model.provider];
+    if (!provider?.enabled || !provider.models[model.id]?.enabled) {
+        throw new Error(`模型未启用或不存在：${model.provider}/${model.id}`);
     }
     if (!isSupportedCustomPiApi(model.api)) {
         throw new Error(`不支持的 Pi API：${model.api}`);
@@ -71,22 +69,6 @@ export function resolvePiModelsFromConfig(
 }
 
 /**
- * 判断当前 resolved model 是否必须使用 invocation 私有 runtime。
- */
-export function isCustomPiRuntimeFromConfig(
-    config: Pick<EffectiveConfig, "models">,
-    model: Model<Api>,
-): boolean {
-    const providerConfigId = resolveProviderConfigId(model);
-    const providerConfig = config.models.providers[providerConfigId];
-    const modelConfig = providerConfig?.models[model.id];
-    const hasExplicitApiOverride = Boolean(modelConfig?.api || providerConfig?.api);
-    const builtinProvider = BUILTIN_MODELS.getProvider(model.provider);
-    const builtinSupportsApi = builtinProvider?.getModels().some((item) => item.api === model.api) === true;
-    return providerConfigId !== model.provider || hasExplicitApiOverride || !builtinProvider || !builtinSupportsApi;
-}
-
-/**
  * 创建只服务当前 invocation 的自定义 Provider runtime。
  */
 function createCustomModels<TApi extends SupportedCustomPiApi>(model: Model<TApi>, streams: ProviderStreams): Models {
@@ -106,8 +88,3 @@ function createCustomModels<TApi extends SupportedCustomPiApi>(model: Model<TApi
 /**
  * 读取 resolved model 上的本地 Provider 配置身份。
  */
-function resolveProviderConfigId(model: Model<Api>): string {
-    return "providerConfigId" in model && typeof model.providerConfigId === "string"
-        ? model.providerConfigId
-        : model.provider;
-}

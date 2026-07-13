@@ -87,7 +87,9 @@ Check manuscripts the way eslint checks code. 340 rules cover filler words, mech
 
 ## Quick Start
 
-**Windows: unzip and run.** Download the zip from [GitHub Releases](https://github.com/notnotype/neuro-book/releases), unzip, and run:
+### Windows for most users: Portable
+
+Open [GitHub Releases](https://github.com/notnotype/neuro-book/releases) and download the asset named exactly `neuro-book-windows-x64.zip` from a complete release. Do not download the Source archive or Product overlay. Unzip it and run:
 
 ```powershell
 .\Start Neuro Book.cmd
@@ -95,22 +97,48 @@ Check manuscripts the way eslint checks code. 340 rules cover filler words, mech
 
 The package bundles Bun, rg, PortableGit with Bash, a prebuilt `.output`, and the full source tree. It does not install application dependencies or build on the user's machine. NeuroBook Manager initializes the `data/` state directory on first start; run `.\Create Admin.cmd` when an administrator is needed. `.\Update Neuro Book.cmd` performs transactional updates while preserving everything in `data/`.
 
-**Server / Docker:**
+### Advanced Windows installations: NeuroBook Manager
+
+Use Manager for multiple instances, Docker, Product Bun, or Source profiles. Without Bun installed:
+
+```powershell
+irm https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.ps1 | iex
+```
+
+With Bun already installed:
+
+```powershell
+bunx --bun @notnotype/neuro-book-manager@canary
+```
+
+### Linux: always use NeuroBook Manager
+
+On Linux x64 glibc without Bun, first ensure `curl`, `unzip`, and `sha256sum` are available, then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.sh | sh
+```
+
+With Bun already installed:
 
 ```bash
 bunx --bun @notnotype/neuro-book-manager@canary
 ```
 
-With no arguments, Manager opens a guided installer that explains deployment profiles and asks for the directory, update channel, port, and authentication policy. After installation, `neuro-book manage` opens a multi-instance TUI. The instance index lives at `~/.neuro-book-manager/config.json`; deployment truth remains in each instance's `.deploy/installation.json`. Automation should use `install --profile ghcr --yes`.
+Stage 0 downloads a fixed Bun build into the user cache, verifies its SHA256, and enters the same Manager installer. `install.ps1`, `install.cmd`, and `install.sh` are also attached to every complete release for audited or offline installation with `SHA256SUMS`.
+
+With no arguments, Manager explains the available profiles and asks for the directory, update channel, port, and authentication policy. After installation, `neuro-book manage` opens a multi-instance TUI. The instance index lives at `~/.neuro-book-manager/config.json`; deployment truth remains in each instance's `.deploy/installation.json`. Automation should use `install --profile ghcr --yes`.
 
 Use `@canary` during the canary phase. Do not use `bunx run @notnotype/neuro-book-manager`: `bunx run` resolves the package name as a local script or path, so Manager never starts. A GitHub Release is installable only after its final `release-manifest.json` is published; Manager safely skips releases that are still assembling or were cancelled.
 
-| Option | Best for |
+| Profile | Best for |
 | --- | --- |
-| Windows Product Portable | Windows users — unzip and run |
-| ghcr | Server Docker deployments, prebuilt image, low-memory friendly |
-| Product Bun | Machines that already have Bun, full source plus a prebuilt Product |
-| Source Dev | Developers — source development and tests |
+| `windows-portable` | Most Windows users; download the complete Portable or let Manager own runtimes and tools |
+| `ghcr` | Preferred for Linux servers; a prebuilt image pinned by digest |
+| `product-bun` | No Docker; matching source and a prebuilt Product |
+| `source-dev` | NeuroBook development with Git source, dependencies, and dev server |
+| `source-product` | Build a production Product from Git source in local staging |
+| `source-docker` | Use Git source as context and install/build entirely inside Docker |
 
 Full deployment, update, administrator, and model configuration instructions: [docs/deployment.md](docs/deployment.md). To have another AI Agent assist with deployment or troubleshooting, just send it [docs/operator-bridge.md](docs/operator-bridge.md).
 

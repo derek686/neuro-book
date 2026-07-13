@@ -502,6 +502,7 @@ function buildConfigModelSettingsDto(effective: EffectiveConfig): ConfigModelSet
         name: provider.name,
         enabled: provider.enabled,
         api: provider.api,
+        discovery: provider.discovery,
         options: {
             apiKey: maskSecret(provider.options.apiKey),
             baseURL: provider.options.baseURL,
@@ -1027,6 +1028,7 @@ function normalizeGlobalModelsForWrite(
         providers: models.providers.map((provider): StoredProviderConfig => ({
             ...provider,
             api: provider.api,
+            discovery: provider.discovery,
             options: {
                 ...provider.options,
                 apiKey: resolveSecretWrite({
@@ -1041,14 +1043,14 @@ function normalizeGlobalModelsForWrite(
                 id: model.id,
                 group: model.group,
                 enabled: model.enabled,
-                provider: model.provider,
                 api: model.api,
-                baseUrl: model.baseUrl,
                 reasoning: model.reasoning,
                 input: model.input,
                 maxTokens: model.maxTokens,
                 cost: model.cost,
                 compat: model.compat,
+                headers: model.headers,
+                thinkingLevelMap: model.thinkingLevelMap,
                 contextWindowTokens: model.contextWindowTokens,
             })),
         })),

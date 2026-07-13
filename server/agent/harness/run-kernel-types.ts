@@ -149,8 +149,6 @@ export type RunFrame = {
     projectPath?: string;
     systemPrompt: string;
     models: Models;
-    /** true 表示本 run 使用 invocation 私有 custom Pi runtime。 */
-    customPiRuntime?: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs?: number | null;
@@ -225,8 +223,6 @@ export type TurnSnapshot = {
     modelMessages: AgentMessage[];
     providerMessages: Message[];
     models: Models;
-    /** true 表示本 turn 使用 invocation 私有 custom Pi runtime。 */
-    customPiRuntime?: boolean;
     model: Model<any>;
     apiKey?: string;
     timeoutMs?: number | null;

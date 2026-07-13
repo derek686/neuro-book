@@ -9,7 +9,7 @@ import type {
     GlobalConfigDto,
     ProjectConfigDto,
 } from "nbook/shared/dto/config.dto";
-import type {PiBuiltinCatalogDto} from "nbook/shared/dto/app-settings.dto";
+import type {NeuroModelCatalogDto} from "nbook/shared/dto/app-settings.dto";
 
 type AgentProfileSettingsQueryParams = ConfigWorkspaceQueryDto & {
     scope: "global" | "project";
@@ -157,10 +157,10 @@ export function useConfigApi() {
     }
 
     /**
-     * 读取 Pi 内置 Provider/Model 目录。
+     * 读取 NeuroBook Provider Preset 与唯一 Model Catalog。
      */
-    async function piModelCatalog(): Promise<PiBuiltinCatalogDto> {
-        return $fetch<PiBuiltinCatalogDto>("/api/config/models/pi-catalog");
+    async function modelCatalog(): Promise<NeuroModelCatalogDto> {
+        return $fetch<NeuroModelCatalogDto>("/api/config/models/catalog");
     }
 
     /**
@@ -187,7 +187,7 @@ export function useConfigApi() {
         saveGlobal,
         saveProject,
         resetProfileHome,
-        piModelCatalog,
+        modelCatalog,
         exchangeRate,
     };
 }

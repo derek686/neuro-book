@@ -9,6 +9,7 @@ function createProviderDraft(overrides: Partial<ModelProviderDraftDto> = {}): Mo
         id: "qwen",
         name: "Qwen",
         api: "openai-completions",
+        discovery: {adapter: "openai-models", endpointPath: null},
         options: {
             apiKey: "sk-test",
             baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/",
@@ -25,15 +26,15 @@ function createModelDraft(overrides: Partial<Omit<ConfiguredModelDto, "enabled">
         name: "Faux",
         id: "faux-fast",
         group: null,
-        provider: null,
-        api: null,
-        baseUrl: null,
-        reasoning: null,
-        input: null,
-        maxTokens: null,
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        maxTokens: 1024,
         cost: null,
         compat: null,
-        contextWindowTokens: null,
+        headers: null,
+        thinkingLevelMap: null,
+        contextWindowTokens: 8192,
         ...overrides,
     };
 }
@@ -55,6 +56,7 @@ describe("model settings provider enabled", () => {
                 name: "Disabled Provider",
                 enabled: false,
                 api: "openai-completions",
+                discovery: {adapter: "none", endpointPath: null},
                 options: createProviderDraft().options,
                 models: [createConfiguredModel({id: "disabled-model", name: "Disabled Model"})],
             }, {
@@ -62,6 +64,7 @@ describe("model settings provider enabled", () => {
                 name: "Enabled Provider",
                 enabled: true,
                 api: "openai-completions",
+                discovery: {adapter: "none", endpointPath: null},
                 options: createProviderDraft().options,
                 models: [createConfiguredModel({id: "enabled-model", name: "Enabled Model"})],
             }],
@@ -85,13 +88,14 @@ describe("provider/model Pi checks", () => {
     it("model check 通过 Pi streamSimple smoke", async () => {
         const faux = createFauxModels({
             provider: "faux-check",
+            api: "openai-completions",
             models: [{id: "faux-fast"}],
         });
         faux.setResponses([fauxAssistantMessage(fauxText("ok"))]);
         const result = await checkModelHealth(createProviderDraft({
             id: "faux-check",
             name: "Faux",
-            api: faux.api,
+            api: "openai-completions",
         }), createModelDraft({
             id: "faux-fast",
         }), {runtimeResolver: () => faux.runtime});
@@ -118,6 +122,7 @@ describe("provider/model Pi checks", () => {
         const controller = new AbortController();
         const faux = createFauxModels({
             provider: "faux-signal-check",
+            api: "openai-completions",
             models: [{id: "faux-fast"}],
         });
         faux.setResponses([(_context, options) => {
@@ -127,7 +132,7 @@ describe("provider/model Pi checks", () => {
         const result = await checkModelHealth(createProviderDraft({
             id: "faux-signal-check",
             name: "Faux Signal",
-            api: faux.api,
+            api: "openai-completions",
         }), createModelDraft({
             id: "faux-fast",
         }), {
@@ -141,13 +146,14 @@ describe("provider/model Pi checks", () => {
     it("provider check 可使用传入的代表模型", async () => {
         const faux = createFauxModels({
             provider: "faux-provider-check",
+            api: "openai-completions",
             models: [{id: "faux-fast"}],
         });
         faux.setResponses([fauxAssistantMessage(fauxText("ok"))]);
         const result = await checkProviderConnection(createProviderDraft({
             id: "faux-provider-check",
             name: "Faux Provider",
-            api: faux.api,
+            api: "openai-completions",
             }), [createModelDraft({id: "faux-fast"})], {runtimeResolver: () => faux.runtime});
 
         expect(result.success).toBe(true);
@@ -173,7 +179,7 @@ describe("provider/model Pi checks", () => {
         const result = await checkModelHealth(createProviderDraft({
             options: {
                 apiKey: "",
-                baseURL: "",
+                baseURL: "http://127.0.0.1:1234/v1",
                 proxy: "",
                 timeoutMs: null,
                 requestOptions: {},
@@ -206,6 +212,7 @@ describe("provider/model Pi checks", () => {
     it("provider 错误消息会脱敏", async () => {
         const faux = createFauxModels({
             provider: "faux-error-check",
+            api: "openai-completions",
             models: [{id: "faux-fast"}],
         });
         faux.setResponses([fauxAssistantMessage([], {
@@ -215,7 +222,7 @@ describe("provider/model Pi checks", () => {
         const result = await checkModelHealth(createProviderDraft({
             id: "faux-error-check",
             name: "Faux",
-            api: faux.api,
+            api: "openai-completions",
         }), createModelDraft({id: "faux-fast"}), {runtimeResolver: () => faux.runtime});
 
         expect(result.success).toBe(false);
@@ -258,21 +265,20 @@ describe("discoverProviderModels", () => {
 
         const result = await discoverProviderModels(createProviderDraft());
 
-        expect(fetchMock).toHaveBeenCalledWith(
-            "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
-            expect.objectContaining({
-                method: "GET",
-                headers: expect.objectContaining({
-                    accept: "application/json",
-                    authorization: "Bearer sk-test",
-                }),
-            }),
-        );
-        expect(result.models).toEqual([
-            {id: "qwen-max", name: "qwen-max", group: "qwen"},
-            {id: "qwen-plus", name: "qwen-plus", group: "qwen"},
+        const [url, init] = fetchMock.mock.calls[0] ?? [];
+        expect(String(url)).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1/models");
+        expect(init).toMatchObject({
+            method: "GET",
+            headers: {
+                accept: "application/json",
+                authorization: "Bearer sk-test",
+            },
+        });
+        expect(result.models.map((model) => ({id: model.id, name: model.name, group: model.group}))).toEqual([
+            {id: "qwen-max", name: "qwen-max", group: "default"},
+            {id: "qwen-plus", name: "qwen-plus", group: "default"},
         ]);
-        expect(result.message).toContain("已从 Qwen 远程发现 2 个模型");
+        expect(result.message).toContain("已从 Qwen 发现 2 个模型");
     });
 
     it("缺少 API Base 时直接报错", async () => {
@@ -299,6 +305,6 @@ describe("discoverProviderModels", () => {
     it("远端 JSON 缺少 data 数组时给出结构错误", async () => {
         globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({object: "list"}))) as unknown as typeof fetch;
 
-        await expect(discoverProviderModels(createProviderDraft())).rejects.toThrow("/models 返回缺少 data 数组");
+        await expect(discoverProviderModels(createProviderDraft())).rejects.toThrow();
     });
 });

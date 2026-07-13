@@ -25,7 +25,6 @@ export const SupportedPiApiSchema = z.enum([
     "google-generative-ai",
     "bedrock-converse-stream",
 ]);
-const PiModelBaseUrlSchema = NullableTextSchema;
 const PiModelInputSchema = z.array(ModelInputKindSchema).min(1, "input 至少需要声明一种输入类型").nullable().default(null);
 const PiModelReasoningSchema = z.boolean().nullable().default(null);
 const PiModelMaxTokensSchema = z.number().int("maxTokens 必须是整数").positive("maxTokens 必须大于 0").nullable().default(null);
@@ -58,6 +57,13 @@ const PiModelCostObjectSchema = z.object({
 });
 const PiModelCostSchema = PiModelCostObjectSchema.nullable().default(null);
 const PiModelCompatSchema = z.record(z.string(), z.json()).nullable().default(null);
+const PiModelHeadersSchema = z.record(z.string(), z.string().nullable()).nullable().default(null);
+const PiThinkingLevelMapSchema = z.record(z.string(), z.string().nullable()).nullable().default(null);
+export const ProviderDiscoveryAdapterSchema = z.enum(["openai-models", "openrouter-models", "google-models", "none"]);
+export const ProviderDiscoveryConfigSchema = z.object({
+    adapter: ProviderDiscoveryAdapterSchema.default("none"),
+    endpointPath: NullableTextSchema,
+});
 
 /**
  * Provider 连接配置。
@@ -78,17 +84,14 @@ export const ConfiguredModelDtoSchema = z.object({
     id: ModelIdSchema,
     group: NullableTextSchema,
     enabled: z.boolean().default(true),
-    /**
-     * 为空表示继承 Pi 内置 registry；自定义模型可显式声明 Pi Model 字段。
-     */
-    provider: NullableTextSchema,
     api: PiModelApiSchema,
-    baseUrl: PiModelBaseUrlSchema,
     reasoning: PiModelReasoningSchema,
     input: PiModelInputSchema,
     maxTokens: PiModelMaxTokensSchema,
     cost: PiModelCostSchema,
     compat: PiModelCompatSchema,
+    headers: PiModelHeadersSchema,
+    thinkingLevelMap: PiThinkingLevelMapSchema,
     contextWindowTokens: ContextWindowTokensSchema,
 });
 
@@ -99,10 +102,9 @@ export const ConfiguredProviderDtoSchema = z.object({
     id: ProviderIdSchema,
     name: z.string().trim().min(1, "Provider 名称不能为空"),
     enabled: z.boolean().default(true),
-    /**
-     * Provider 下模型的默认 Pi API adapter。模型级 api 为空时继承此值。
-     */
+    /** Provider 创建、发现和新模型草稿使用的默认 Pi API；runtime 仍要求启用模型保存完整 api。 */
     api: PiModelApiSchema,
+    discovery: ProviderDiscoveryConfigSchema,
     options: ModelProviderOptionsDtoSchema,
     models: z.array(ConfiguredModelDtoSchema).default([]),
 });
@@ -199,6 +201,31 @@ export const UpdateModelSettingsRequestDtoSchema = z.object({
             modelIdSet.add(model.id);
 
             if (provider.enabled && model.enabled) {
+                if (!provider.options.baseURL && model.api !== "bedrock-converse-stream") {
+                    ctx.addIssue({
+                        code: "custom",
+                        path: ["providers", provider.id, "options", "baseURL"],
+                        message: `启用模型 ${provider.id}/${model.id} 前必须设置 Provider Base URL`,
+                    });
+                }
+                if (!model.api) {
+                    ctx.addIssue({code: "custom", path: ["providers", provider.id, "models", model.id, "api"], message: "启用模型必须设置 Pi API"});
+                }
+                if (model.reasoning === null) {
+                    ctx.addIssue({code: "custom", path: ["providers", provider.id, "models", model.id, "reasoning"], message: "启用模型必须明确 reasoning 能力"});
+                }
+                if (!model.input?.length) {
+                    ctx.addIssue({code: "custom", path: ["providers", provider.id, "models", model.id, "input"], message: "启用模型必须声明输入能力"});
+                }
+                if (model.contextWindowTokens === null) {
+                    ctx.addIssue({code: "custom", path: ["providers", provider.id, "models", model.id, "contextWindowTokens"], message: "启用模型必须设置 contextWindowTokens"});
+                }
+                if (model.maxTokens === null) {
+                    ctx.addIssue({code: "custom", path: ["providers", provider.id, "models", model.id, "maxTokens"], message: "启用模型必须设置 maxTokens"});
+                }
+                if (model.contextWindowTokens !== null && model.maxTokens !== null && model.maxTokens > model.contextWindowTokens) {
+                    ctx.addIssue({code: "custom", path: ["providers", provider.id, "models", model.id, "maxTokens"], message: "maxTokens 不能大于 contextWindowTokens"});
+                }
                 enabledModelKeys.add(`${provider.id}/${model.id}`);
             }
         }
@@ -271,6 +298,7 @@ export const ModelProviderDraftDtoSchema = z.object({
     id: ProviderIdSchema,
     name: z.string().trim().min(1, "Provider 名称不能为空"),
     api: PiModelApiSchema,
+    discovery: ProviderDiscoveryConfigSchema,
     options: ModelProviderOptionsDtoSchema,
 });
 
@@ -281,6 +309,15 @@ export const DiscoveredProviderModelDtoSchema = z.object({
     id: ModelIdSchema,
     name: z.string().trim().min(1, "模型名称不能为空"),
     group: NullableTextSchema,
+    api: PiModelApiSchema,
+    reasoning: PiModelReasoningSchema,
+    input: PiModelInputSchema,
+    contextWindowTokens: ContextWindowTokensSchema,
+    maxTokens: PiModelMaxTokensSchema,
+    cost: PiModelCostSchema,
+    compat: PiModelCompatSchema,
+    headers: PiModelHeadersSchema,
+    thinkingLevelMap: PiThinkingLevelMapSchema,
 });
 
 /**
@@ -339,39 +376,36 @@ export const CheckModelResponseDtoSchema = z.object({
     message: z.string().trim().min(1),
 });
 
-/**
- * Pi 内置模型目录。前端用它把 provider/model 添加到 Global Config。
- */
-export const PiBuiltinModelDtoSchema = z.object({
+/** NeuroBook 维护的唯一标准模型条目。 */
+export const ModelCatalogEntryDtoSchema = z.object({
     id: ModelIdSchema,
     name: z.string().trim().min(1),
-    api: z.string().trim().min(1),
-    provider: ProviderIdSchema,
-    baseUrl: z.string().trim(),
+    canonicalSource: ProviderIdSchema,
+    defaultApi: SupportedPiApiSchema,
     reasoning: z.boolean(),
-    thinkingLevelMap: z.record(z.string(), z.string().nullable()).nullable().default(null),
+    thinkingLevelMap: PiThinkingLevelMapSchema,
     input: z.array(ModelInputKindSchema).min(1),
-    cost: PiModelCostObjectSchema,
+    cost: PiModelCostObjectSchema.nullable(),
     contextWindowTokens: z.number().int().positive(),
     maxTokens: z.number().int().positive(),
-    compat: PiModelCompatSchema,
+    compatByApi: z.record(z.string(), PiModelCompatSchema),
+    headersByApi: z.record(z.string(), PiModelHeadersSchema),
 });
 
-/**
- * Pi 内置 Provider 目录项。
- */
-export const PiBuiltinProviderDtoSchema = z.object({
+/** NeuroBook Provider 创建预设；复制后与用户配置无持续关联。 */
+export const ProviderPresetDtoSchema = z.object({
     id: ProviderIdSchema,
     name: z.string().trim().min(1),
     baseUrl: z.string().trim(),
-    models: z.array(PiBuiltinModelDtoSchema).default([]),
+    supportedApis: z.array(SupportedPiApiSchema).min(1),
+    defaultApi: SupportedPiApiSchema.nullable(),
+    discovery: ProviderDiscoveryConfigSchema,
 });
 
-/**
- * Pi 内置 Provider/Model 目录响应。
- */
-export const PiBuiltinCatalogDtoSchema = z.object({
-    providers: z.array(PiBuiltinProviderDtoSchema).default([]),
+/** 设置页一次加载的 NeuroBook Provider Preset 与 Model Catalog。 */
+export const NeuroModelCatalogDtoSchema = z.object({
+    providerPresets: z.array(ProviderPresetDtoSchema).default([]),
+    models: z.array(ModelCatalogEntryDtoSchema).default([]),
 });
 
 export type ModelInputKind = z.infer<typeof ModelInputKindSchema>;
@@ -394,6 +428,7 @@ export type DiscoverProviderModelsRequestDto = z.infer<typeof DiscoverProviderMo
 export type DiscoverProviderModelsResponseDto = z.infer<typeof DiscoverProviderModelsResponseDtoSchema>;
 export type CheckModelRequestDto = z.infer<typeof CheckModelRequestDtoSchema>;
 export type CheckModelResponseDto = z.infer<typeof CheckModelResponseDtoSchema>;
-export type PiBuiltinModelDto = z.infer<typeof PiBuiltinModelDtoSchema>;
-export type PiBuiltinProviderDto = z.infer<typeof PiBuiltinProviderDtoSchema>;
-export type PiBuiltinCatalogDto = z.infer<typeof PiBuiltinCatalogDtoSchema>;
+export type ProviderDiscoveryAdapterDto = z.infer<typeof ProviderDiscoveryAdapterSchema>;
+export type ModelCatalogEntryDto = z.infer<typeof ModelCatalogEntryDtoSchema>;
+export type ProviderPresetDto = z.infer<typeof ProviderPresetDtoSchema>;
+export type NeuroModelCatalogDto = z.infer<typeof NeuroModelCatalogDtoSchema>;

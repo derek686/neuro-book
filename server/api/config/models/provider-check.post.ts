@@ -34,6 +34,27 @@ defineRouteMeta({
                                     "type": "string",
                                     "minLength": 1
                                 },
+                                "discovery": {
+                                    "type": "object",
+                                    "properties": {
+                                        "adapter": {
+                                            "default": "none",
+                                            "type": "string",
+                                            "enum": [
+                                                "openai-models",
+                                                "openrouter-models",
+                                                "google-models",
+                                                "none"
+                                            ]
+                                        },
+                                        "endpointPath": {}
+                                    },
+                                    "required": [
+                                        "adapter",
+                                        "endpointPath"
+                                    ],
+                                    "additionalProperties": false
+                                },
                                 "options": {
                                     "type": "object",
                                     "properties": {
@@ -59,9 +80,90 @@ defineRouteMeta({
                                         "requestOptions": {
                                             "default": {},
                                             "type": "object",
-                                            "additionalProperties": {
-                                                "$ref": "#/definitions/__schema0"
-                                            }
+                                            "properties": {
+                                                "temperature": {
+                                                    "type": "number",
+                                                    "minimum": 0
+                                                },
+                                                "headers": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "nullable": true,
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "websocketConnectTimeoutMs": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": true,
+                                                    "maximum": 9007199254740991
+                                                },
+                                                "maxRetries": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 9007199254740991
+                                                },
+                                                "maxRetryDelayMs": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 9007199254740991
+                                                },
+                                                "metadata": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "$ref": "#/definitions/__schema0"
+                                                    }
+                                                },
+                                                "env": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "transport": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sse",
+                                                        "websocket",
+                                                        "websocket-cached",
+                                                        "auto"
+                                                    ]
+                                                },
+                                                "cacheRetention": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "none",
+                                                        "short",
+                                                        "long"
+                                                    ]
+                                                },
+                                                "thinkingBudgets": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "minimal": {
+                                                            "type": "integer",
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                        },
+                                                        "low": {
+                                                            "type": "integer",
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                        },
+                                                        "medium": {
+                                                            "type": "integer",
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                        },
+                                                        "high": {
+                                                            "type": "integer",
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                        }
+                                                    },
+                                                    "additionalProperties": false
+                                                }
+                                            },
+                                            "additionalProperties": false
                                         }
                                     },
                                     "required": [
@@ -78,6 +180,7 @@ defineRouteMeta({
                                 "id",
                                 "name",
                                 "api",
+                                "discovery",
                                 "options"
                             ],
                             "additionalProperties": false
@@ -97,14 +200,12 @@ defineRouteMeta({
                                         "minLength": 1
                                     },
                                     "group": {},
-                                    "provider": {},
                                     "api": {
                                         "default": null,
                                         "nullable": true,
                                         "type": "string",
                                         "minLength": 1
                                     },
-                                    "baseUrl": {},
                                     "reasoning": {
                                         "default": null,
                                         "nullable": true,
@@ -136,27 +237,66 @@ defineRouteMeta({
                                         "type": "object",
                                         "properties": {
                                             "input": {
-                                                "default": 0,
-                                                "type": "number"
+                                                "type": "number",
+                                                "minimum": 0
                                             },
                                             "output": {
-                                                "default": 0,
-                                                "type": "number"
+                                                "type": "number",
+                                                "minimum": 0
                                             },
                                             "cacheRead": {
-                                                "default": 0,
-                                                "type": "number"
+                                                "type": "number",
+                                                "minimum": 0
                                             },
                                             "cacheWrite": {
-                                                "default": 0,
-                                                "type": "number"
+                                                "type": "number",
+                                                "minimum": 0
+                                            },
+                                            "tiers": {
+                                                "default": [],
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "inputTokensAbove": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "maximum": 9007199254740991
+                                                        },
+                                                        "input": {
+                                                            "type": "number",
+                                                            "minimum": 0
+                                                        },
+                                                        "output": {
+                                                            "type": "number",
+                                                            "minimum": 0
+                                                        },
+                                                        "cacheRead": {
+                                                            "type": "number",
+                                                            "minimum": 0
+                                                        },
+                                                        "cacheWrite": {
+                                                            "type": "number",
+                                                            "minimum": 0
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "inputTokensAbove",
+                                                        "input",
+                                                        "output",
+                                                        "cacheRead",
+                                                        "cacheWrite"
+                                                    ],
+                                                    "additionalProperties": false
+                                                }
                                             }
                                         },
                                         "required": [
                                             "input",
                                             "output",
                                             "cacheRead",
-                                            "cacheWrite"
+                                            "cacheWrite",
+                                            "tiers"
                                         ],
                                         "additionalProperties": false
                                     },
@@ -166,6 +306,24 @@ defineRouteMeta({
                                         "type": "object",
                                         "additionalProperties": {
                                             "$ref": "#/definitions/__schema1"
+                                        }
+                                    },
+                                    "headers": {
+                                        "default": null,
+                                        "nullable": true,
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "nullable": true,
+                                            "type": "string"
+                                        }
+                                    },
+                                    "thinkingLevelMap": {
+                                        "default": null,
+                                        "nullable": true,
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "nullable": true,
+                                            "type": "string"
                                         }
                                     },
                                     "contextWindowTokens": {
@@ -180,14 +338,14 @@ defineRouteMeta({
                                     "name",
                                     "id",
                                     "group",
-                                    "provider",
                                     "api",
-                                    "baseUrl",
                                     "reasoning",
                                     "input",
                                     "maxTokens",
                                     "cost",
                                     "compat",
+                                    "headers",
+                                    "thinkingLevelMap",
                                     "contextWindowTokens"
                                 ],
                                 "additionalProperties": false
@@ -336,14 +494,14 @@ export default defineEventHandler(async (event) => {
                     name: model.name,
                     id: model.id,
                     group: model.group,
-                    provider: model.provider,
                     api: model.api,
-                    baseUrl: model.baseUrl,
                     reasoning: model.reasoning,
                     input: model.input,
                     maxTokens: model.maxTokens,
                     cost: model.cost,
                     compat: model.compat,
+                    headers: model.headers,
+                    thinkingLevelMap: model.thinkingLevelMap,
                     contextWindowTokens: model.contextWindowTokens,
                 }))
             : [];
