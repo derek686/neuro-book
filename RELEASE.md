@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.8.2-canary - 2026-07-16
+
+本次版本补齐 ARM64 与 Podman 部署支持，并修复 fork 仓库发布 GHCR 镜像时的命名兼容问题。
+
+- GHCR 与 Linux Product Bun 新增 `linux/arm64` / `linux-aarch64-glibc` 产物，macOS ARM64 可以使用 Docker 或源码部署。
+- Manager 自动检测 Docker 或 Podman；rootless Podman 不再重复注入宿主 UID，容器内 `/app` 允许运行用户写入构建与工作文件。
+- Release workflow 会把 fork owner 规范化为小写 OCI 镜像命名，同时继续发布到 fork 自己的 GHCR namespace；构建、manifest 与公开镜像验证共用同一引用。
+
+验证结果：Manager Docker Compose 聚焦测试与类型检查通过，release workflow YAML 和大小写转换静态检查通过；本次发布将由 GitHub Actions 完成多架构构建及发布门禁。
+
 ## 0.8.0-canary - 2026-07-15
 
 本次 minor 版本重构 Agent Chat Flow 的公开数据与恢复协议，让长会话的首屏、向上翻页、实时流式响应和工具卡都具备明确的网络与内存边界；同时收紧模型配置写入合同，避免无效 Provider、模型引用或默认值进入运行时。
