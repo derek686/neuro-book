@@ -145,8 +145,6 @@ export async function doctor(root: string, manifest: InstallationManifest): Prom
         } catch (error) {
             checks.push({id: "service.container-engine", category: "service", status: "fail", message: `持久化Container Engine不可用：${engine}`, remediation: error instanceof Error ? error.message : String(error)});
         }
-    } else {
-        engine = await resolveContainerEngine().catch(() => null);
     }
     const commands = {
         bun: await commandStatus("bun"),

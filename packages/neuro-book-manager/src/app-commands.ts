@@ -61,8 +61,6 @@ export async function createAdmin(root: string, manifest: InstallationManifest, 
         const engine = manifest.containerEngine;
         const compose = join(root, ".deploy", "docker-compose.generated.yml");
         const composeArgs = ["compose", "--env-file", join(stateRoot, ".env"), "-f", compose];
-        const running = (await runCapture(engine, [...composeArgs, "ps", "--status", "running", "--services", "app"], {cwd: root})).trim();
-        if (running !== "app") throw new Error("容器 app 尚未运行，请先执行 neuro-book start。" );
         await run(engine, [...composeArgs, "exec", "app", "bun", ".output/server/scripts/cli/create-admin.ts", ...(username ? [username] : [])], {cwd: root});
         return;
     }
