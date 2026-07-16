@@ -13,6 +13,14 @@ VERSION="${4#v}"
 PORT="$5"
 BROWSER="$6"
 
+if [ "$BROWSER" = "playwright" ]; then
+    BROWSER="$(node --input-type=module -e 'import {chromium} from "playwright-core"; process.stdout.write(chromium.executablePath())')"
+fi
+if [ ! -x "$BROWSER" ]; then
+    echo "Product browser smoke缺少可执行浏览器：$BROWSER" >&2
+    exit 1
+fi
+
 case "$PLATFORM" in
     linux-x64-glibc)
         LIBSQL="@libsql/linux-x64-gnu/"
@@ -110,10 +118,8 @@ if [ "$ready" != true ]; then
     exit 1
 fi
 
-if [ "$BROWSER" != "none" ]; then
-    node --import tsx scripts/deploy/product-browser-smoke.ts \
-        --url "http://127.0.0.1:$PORT" \
-        --expected-version "$VERSION" \
-        --browser-executable "$BROWSER" \
-        --screenshot "$SMOKE_ROOT/browser-failure.png"
-fi
+node --import tsx scripts/deploy/product-browser-smoke.ts \
+    --url "http://127.0.0.1:$PORT" \
+    --expected-version "$VERSION" \
+    --browser-executable "$BROWSER" \
+    --screenshot "$SMOKE_ROOT/browser-failure.png"

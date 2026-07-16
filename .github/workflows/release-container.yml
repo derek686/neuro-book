@@ -13,7 +13,17 @@ env:
   NODE_OPTIONS: --max-old-space-size=4096
 
 jobs:
+  verify-manager:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --linker hoisted
+      - name: Verify public Manager bundle
+        run: bun run manager:verify-public
+
   build-and-push:
+    needs: verify-manager
     runs-on: ubuntu-latest
     outputs:
       app-digest: ${{ steps.app-build.outputs.digest }}
@@ -77,6 +87,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=app
 
   source:
+    needs: verify-manager
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -89,6 +100,7 @@ jobs:
           path: dist/neuro-book-source.zip
 
   product-linux:
+    needs: verify-manager
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -106,7 +118,9 @@ jobs:
           path: dist/neuro-book-product-linux-x64-glibc.tar.gz
 
   product-linux-aarch64:
+    needs: source
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -117,6 +131,30 @@ jobs:
         run: bun run manager:test
       - run: bun run nuxt:build
       - run: bun run release:product:linux-aarch64
+      - uses: actions/download-artifact@v4
+        with:
+          name: source
+          path: dist
+      - name: Install Playwright Chromium
+        run: bunx playwright-core install --with-deps chromium
+      - name: Verify Linux aarch64 Product
+        shell: bash
+        run: |
+          version="${{ github.event.release.tag_name }}"
+          bash scripts/release/verify-posix-product.sh \
+            linux-aarch64-glibc \
+            dist/neuro-book-source.zip \
+            dist/neuro-book-product-linux-aarch64-glibc.tar.gz \
+            "${version#v}" \
+            39127 \
+            playwright
+      - name: Upload Linux aarch64 Product diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64-product-diagnostics
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/neuro-book-linux-aarch64-glibc-smoke/*
       - uses: actions/upload-artifact@v4
         with:
           name: product-linux-aarch64
@@ -252,7 +290,6 @@ jobs:
           cp scripts/install/install.cmd dist/install.cmd
           cp scripts/install/install.sh dist/install.sh
           manager_version="$(bun -e 'console.log(require("./packages/neuro-book-manager/package.json").version)')"
-          bun run manager:verify-public
           bun scripts/release/release-assets.ts manifest \
             --tag "${{ github.event.release.tag_name }}" \
             --revision "${{ github.sha }}" \

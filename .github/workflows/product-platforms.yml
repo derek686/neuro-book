@@ -38,7 +38,7 @@ jobs:
             command: release:product:linux-aarch64
             archive: neuro-book-product-linux-aarch64-glibc.tar.gz
             port: 39224
-            browser: none
+            browser: playwright
           - platform: darwin-x64
             runner: macos-15-intel
             command: release:product:darwin
@@ -63,6 +63,9 @@ jobs:
       - run: bun run nuxt:build
       - run: bun run release:source
       - run: bun run ${{ matrix.command }}
+      - name: Install Playwright Chromium
+        if: matrix.browser == 'playwright'
+        run: bunx playwright-core install --with-deps chromium
       - name: Verify native Product
         shell: bash
         run: |
@@ -74,3 +77,10 @@ jobs:
             "${version}" \
             "${{ matrix.port }}" \
             "${{ matrix.browser }}"
+      - name: Upload native Product diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-product-diagnostics
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/neuro-book-${{ matrix.platform }}-smoke/*
