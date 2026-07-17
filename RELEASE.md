@@ -1,5 +1,30 @@
 # Release Notes
 
+## 0.8.3-canary - 2026-07-17
+
+本次patch修复GHCR与Source Docker在普通宿主UID/GID下启动失败的问题，并把Product内置Agent编译资产收口为真正的只读运行合同。
+
+### 更新说明
+
+- Manager生成的Docker Compose现在同时挂载State Root `.env`、`config.yaml`、`workspace/`和`logs/`，容器不再尝试写镜像内的`/app/.env`。
+- Profile、Variable、预览、后台worker和user-assets同步的临时目录不再写`process.cwd()/.agent`，而是位于对应Agent root同级的`.staging/`。系统assets留在Application Root，用户运行产物自然落到State Root。
+- Product启动只校验内置Profile/Variable artifact；全部新鲜时不会创建staging、获取发布锁或重写manifest。源码、依赖或manifest不匹配时明确要求重建/重装Product，不再尝试修改只读镜像。
+- runtime artifact动态导入缓存必须由调用方显式指定物理根。系统Profile加载缓存位于`workspace/.nbook/agent/.staging/`，类型系统不再允许从cwd或只读artifact位置猜测缓存目录。
+- Docker镜像在最终Product tsconfig写入后重新编译system assets，保证发布manifest的源码、依赖路径与最终运行镜像一致。
+
+### 迁移指南
+
+- GHCR与Source Docker实例应使用NeuroBook Manager canary更新；不要手工给`/app`执行`chmod`、不要改为root容器，也不要把`.env`烘焙进镜像。
+- 旧Compose若缺少`.env:/app/.env`挂载，请重新运行Manager更新生成Compose，不要只手工修改容器内文件。
+- Product Bun与Windows Portable保留完整State Root即可。Windows Portable继续迁移完整`data/`；其他Profile保留`workspace/`、`config.yaml`、`.env`和`logs/`。
+- 若启动报告内置Profile或Variable artifact过期，说明Source/Product组合不一致；应重新安装对应Release，不要删除manifest或放宽checksum/freshness校验。
+
+### 验证与已知边界
+
+- 本机根typecheck、Manager typecheck/pack、Variable完整20项、只读system-assets与runtime import聚焦回归通过。
+- SSH Arch使用普通UID/GID构建并启动当前源码Docker Product；SQLite migration、HTTP版本、14个Profile catalog、Agent五工具、Config/Profile/Variable、外部Project图片与Attachment均通过，镜像`/app/.agent`保持不存在。
+- 本轮仍需由新canary Release workflow验证公开GHCR、Linux Product Bun和Windows Portable；未自动执行人工浏览器操作。
+
 ## 0.8.2-canary - 2026-07-17
 
 本次patch集中修复Agent图片持久化、Portable/自定义State Root文件定位和发布迁移事务。用户图片不再以内联base64长期留在Session中，Agent文件工具也不再把逻辑`workspace`误当成Installation Root下的物理目录。

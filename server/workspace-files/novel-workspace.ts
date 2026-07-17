@@ -1086,7 +1086,8 @@ function isManagedAssetBlacklisted(assetPath: string): boolean {
         || normalized.startsWith("agent/skills/llmlint/.git/")
         || normalized.startsWith("agent/skills/llmlint/node_modules/")
         || normalized.startsWith("agent/skills/llmlint/evals/")
-        || parts.includes(".compiled");
+        || parts.includes(".compiled")
+        || parts.includes(".staging");
 }
 
 async function assertReadableUserAssetsSyncAssetPath(assetPath: string): Promise<void> {
@@ -1103,7 +1104,7 @@ async function createProfileArtifactSyncBatch(): Promise<ProfileArtifactSyncBatc
     const systemManifest = await readProfileArtifactManifest(systemProfileRoot());
     return {
         systemManifest,
-        buildCompiledDir: path.resolve(process.cwd(), ".agent", "workspace", "profile-artifact-sync", randomUUID()),
+        buildCompiledDir: path.join(path.dirname(userProfileRoot()), ".staging", "profile-artifact-sync", randomUUID()),
         stagedProfiles: [],
     };
 }

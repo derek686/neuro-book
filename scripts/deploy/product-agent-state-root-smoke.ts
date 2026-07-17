@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import {createHash} from "node:crypto";
 import {access, mkdir, readFile, rename, rm, writeFile} from "node:fs/promises";
+import {tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {Type} from "typebox";
@@ -53,7 +54,7 @@ if (process.argv[2] === "resume-moved-state") {
 const projectSlug = `task109-product-smoke-${process.pid}`;
 const projectPath = `workspace/${projectSlug}`;
 const projectRoot = path.join(runtimePaths.workspaceRoot, projectSlug);
-const externalProjectRoot = `${runtimePaths.stateRoot}-external-project-${process.pid}`;
+const externalProjectRoot = path.join(tmpdir(), `neuro-book-external-project-${process.pid}`);
 const externalImageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 await mkdir(path.join(projectRoot, ".nbook"), {recursive: true});
 await writeFile(path.join(projectRoot, "project.yaml"), [

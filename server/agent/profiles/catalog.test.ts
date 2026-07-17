@@ -1095,6 +1095,42 @@ describe("AgentProfileCatalog", () => {
         await expect(validateProfileArtifact(systemRoot, nextItem)).resolves.toEqual({fresh: true});
     });
 
+    it("只读 Product profile 新鲜时零写入，过期时要求重建", async () => {
+        const stagingRoot = join(root, "runtime-staging");
+        const profilePath = join(systemRoot, "custom.readonly.profile.tsx");
+        await writeProfile(systemRoot, "custom.readonly.profile.tsx", profileSource("custom.readonly", "Readonly"));
+        await compileProfileArtifacts({
+            profileRoot: systemRoot,
+            rootLabel: "assets/workspace/.nbook/agent/profiles",
+            stagingRoot,
+        });
+        await rm(stagingRoot, {recursive: true, force: true});
+        const manifestPath = join(systemRoot, ".compiled", "manifest.json");
+        const manifestBefore = await readFile(manifestPath, "utf8");
+
+        const fresh = await compileProfileArtifacts({
+            profileRoot: systemRoot,
+            rootLabel: "assets/workspace/.nbook/agent/profiles",
+            skipFresh: true,
+            writePolicy: "forbid",
+            stagingRoot,
+        });
+        expect(fresh.compiled).toEqual([]);
+        await expect(readFile(stagingRoot, "utf8")).rejects.toThrow();
+        expect(await readFile(manifestPath, "utf8")).toBe(manifestBefore);
+
+        await writeFile(profilePath, (await readFile(profilePath, "utf8")).replace("Readonly", "Changed"), "utf8");
+        await expect(compileProfileArtifacts({
+            profileRoot: systemRoot,
+            rootLabel: "assets/workspace/.nbook/agent/profiles",
+            skipFresh: true,
+            writePolicy: "forbid",
+            stagingRoot,
+        })).rejects.toThrow("请重新构建或安装与源码匹配的 Product");
+        await expect(readFile(stagingRoot, "utf8")).rejects.toThrow();
+        expect(await readFile(manifestPath, "utf8")).toBe(manifestBefore);
+    });
+
     it("系统 artifact 同步到用户 root 后入口源码依赖可重定位", async () => {
         await writeProfile(systemRoot, "builtin/custom.synced.profile.tsx", profileSource("custom.synced", "Synced"));
         await writeProfile(userRoot, "builtin/custom.synced.profile.tsx", profileSource("custom.synced", "Synced"));

@@ -79,6 +79,10 @@ export type CompileProfileArtifactsOptions = {
     fileName?: string;
     rootLabel?: string;
     skipFresh?: boolean;
+    /** Product 内置系统 assets 使用 forbid；新鲜时零写入，过期时要求重建 Product。 */
+    writePolicy?: "allow" | "forbid";
+    /** 非空时覆盖默认的 profile root 同级 Agent staging 根。 */
+    stagingRoot?: string;
     /** 为空时按 CLI/preflight disk-only 发布；HTTP runtime 可传 in-process 发布策略。 */
     publish?: ProfileReleasePublishOptions;
 };
@@ -94,6 +98,8 @@ export type StagedProfileArtifactsResult = CompileProfileArtifactsResult & {
     profileRoot: string;
     buildCompiledDir: string;
     sourceFilesAtStart: ProfileArtifactSourceFile[];
+    /** false 表示所有 artifact 与 manifest 已新鲜，调用方不得获取发布锁或改写磁盘。 */
+    publishRequired: boolean;
 };
 
 export type ProfileArtifactSourceFile = {
@@ -318,6 +324,14 @@ export async function compileProfileArtifacts(options: CompileProfileArtifactsOp
         if (!options.fileName) {
             await assertProfileFullReleaseFresh(staged.profileRoot, staged.sourceFilesAtStart, staged.manifest.entries);
         }
+        if (!staged.publishRequired) {
+            return {
+                manifest: staged.manifest,
+                compiledDir: staged.compiledDir,
+                manifestPath: staged.manifestPath,
+                compiled: staged.compiled,
+            };
+        }
         await new ProfileReleasePublisher({
             profileRoot: staged.profileRoot,
             mode: options.publish?.mode ?? "disk_only",
@@ -342,8 +356,11 @@ export async function stageProfileArtifacts(options: CompileProfileArtifactsOpti
     const profileRoot = resolve(options.profileRoot);
     const compiledDir = join(profileRoot, PROFILE_COMPILED_DIR_NAME);
     const fullCompile = !options.fileName;
-    const buildCompiledDir = resolve(process.cwd(), ".agent", "workspace", "profile-artifact-build", randomUUID());
-    await mkdir(buildCompiledDir, {recursive: true});
+    const buildCompiledDir = join(
+        resolve(options.stagingRoot ?? join(dirname(profileRoot), ".staging")),
+        "profile-artifact-build",
+        randomUUID(),
+    );
     const existingManifest = await readProfileArtifactManifest(profileRoot);
     const targetFiles = options.fileName
         ? [resolveProfileFile(profileRoot, options.fileName)]
@@ -354,10 +371,16 @@ export async function stageProfileArtifacts(options: CompileProfileArtifactsOpti
     try {
         const compileResults = await mapConcurrent(targetFiles, profileCompileConcurrency(targetFiles.length), async (file): Promise<ProfileCompileFileResult> => {
             const existingItem = existingManifest.profiles.find((item) => item.fileName === file.fileName);
-            if (options.skipFresh && existingItem && (await validateProfileArtifact(profileRoot, existingItem, {requireTypeArtifact: true})).fresh) {
+            if ((options.skipFresh || options.writePolicy === "forbid")
+                && existingItem
+                && (await validateProfileArtifact(profileRoot, existingItem, {requireTypeArtifact: true})).fresh) {
                 return {entry: existingItem};
             }
+            if (options.writePolicy === "forbid") {
+                throw new Error(`Product 内置 profile artifact 已过期或缺失：${file.fileName}。请重新构建或安装与源码匹配的 Product。`);
+            }
             try {
+                await mkdir(buildCompiledDir, {recursive: true});
                 const item = await compileProfileFile(profileRoot, buildCompiledDir, file);
                 return {entry: item, compiled: item};
             } catch (error) {
@@ -385,6 +408,12 @@ export async function stageProfileArtifacts(options: CompileProfileArtifactsOpti
             entries: nextEntries,
             profiles: nextProfiles,
         };
+        const publishRequired = compiled.length > 0
+            || !profilesEqual(existingManifest.entries, nextEntries)
+            || existingManifest.profilesRoot !== manifest.profilesRoot;
+        if (publishRequired && options.writePolicy === "forbid") {
+            throw new Error("Product 内置 profile manifest 与源码不匹配。请重新构建或安装与源码匹配的 Product。");
+        }
         const manifestPath = profileArtifactManifestPath(profileRoot);
         return {
             manifest,
@@ -394,6 +423,7 @@ export async function stageProfileArtifacts(options: CompileProfileArtifactsOpti
             profileRoot,
             buildCompiledDir,
             sourceFilesAtStart: targetFiles,
+            publishRequired,
         };
     } catch (error) {
         await cleanupProfileArtifactStaging(buildCompiledDir);
@@ -476,9 +506,14 @@ export async function cleanupProfileArtifactStaging(buildCompiledDir: string): P
 export async function stageProfileArtifactEntry(options: {
     profileRoot: string;
     fileName: string;
+    stagingRoot?: string;
 }): Promise<StagedProfileArtifactEntryResult> {
     const profileRoot = resolve(options.profileRoot);
-    const buildCompiledDir = resolve(process.cwd(), ".agent", "workspace", "profile-artifact-build", randomUUID());
+    const buildCompiledDir = join(
+        resolve(options.stagingRoot ?? join(dirname(profileRoot), ".staging")),
+        "profile-artifact-build",
+        randomUUID(),
+    );
     await mkdir(buildCompiledDir, {recursive: true});
     try {
         const file = resolveProfileFile(profileRoot, options.fileName);
@@ -910,6 +945,7 @@ async function importCompiledProfile(artifactPath: string, artifactHash: {sha256
     const mod = await importRuntimeArtifact<{default?: unknown}>(artifactPath, {
         cacheKey: artifactHash.sha256,
         cacheNamespace: "profile-compiler",
+        cacheRoot: dirname(artifactPath),
         expectedBytes: artifactHash.bytes,
     });
     const profile = mod.default;

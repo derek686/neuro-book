@@ -1,7 +1,7 @@
 import {performance} from "node:perf_hooks";
 import {randomUUID} from "node:crypto";
 import {cp, rm} from "node:fs/promises";
-import {join, resolve} from "node:path";
+import {dirname, join, resolve} from "node:path";
 import {
     compileProfileArtifacts,
     cleanupProfileArtifactStaging,
@@ -239,7 +239,7 @@ export async function runProfileCompileAll(input: InternalProfileCompileAllReque
  * 在后台 worker 内用临时 profile root 预览当前源码，不污染真实用户 `.compiled`。
  */
 async function runDryRunProfilePreview(input: AgentProfileCompileRequestDto, userProfileRoot: string): Promise<AgentProfileCompileResultDto> {
-    const temporaryRoot = resolve(process.cwd(), ".agent", "workspace", "profile-source-check", randomUUID());
+    const temporaryRoot = join(dirname(userProfileRoot), ".staging", "profile-source-check", randomUUID());
     try {
         await cp(userProfileRoot, temporaryRoot, {recursive: true, force: true}).catch(() => undefined);
         if (input.source !== undefined) {

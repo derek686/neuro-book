@@ -661,3 +661,15 @@ Profile/Harness             -> 上述稳定 Interface
 - 公开`.16`确认顶层Manager`--version`会截获install/update/runtime install的同名子命令参数。路径命令本身没有错误，但显式版本安装无法进入目标Profile，属于Task 105/109发布验收中发现的CLI边界漏洞。
 - Manager现启用Commander positional options：物理实例选择`--root/--instance`固定在子命令前，应用/Runtime版本固定在子命令后。Portable Launcher既有`neuro-book --root <portable-root> <command>`保持不变，避免为了兼容含义模糊的任意参数位置重新引入解析分支。
 - packed bundle回归同时验证顶层Manager版本与子命令应用版本路由；下一Manager版本为`.17`。该修复不改变RuntimePaths、WorkspaceRootRef、ProjectPath或Installation Manifest。
+
+### 2026-07-17 只读Application Root与运行时staging收口
+
+- 公开`0.8.2`的GHCR安装补齐`.env`挂载后继续在`/app/.agent`失败，证明Task 109此前“当前源码Source Docker通过”仍未覆盖宿主普通UID/GID + 只读镜像层的真实权限合同。
+- `compileVariableDefinitions`与`compileProfileArtifacts`新增明确`writePolicy`。Product内置system assets使用`forbid`：已新鲜时不创建目录、不重写manifest、不获取Profile发布锁；任一源码、type artifact、依赖或文件集合变化都要求重建Product。
+- 所有Agent artifact staging从cwd迁到源码root同级`agent/.staging`。这不是新的路径真相源：系统root由Application Root Adapter决定，用户root由State Root Adapter决定，编译器只在调用方已给出的领域root附近管理临时产物。
+- `importRuntimeArtifact`删除cwd fallback。带`cacheKey`的调用必须同时提供`cacheRoot`；Profile Catalog把系统artifact复制到用户Agent staging后导入，Variable与World Engine同样使用明确可写root。该约束由联合类型表达，不靠调用方约定。
+- Docker Product在最终tsconfig生成后以显式`--product-build`重新编译`.output/server/assets`。运行时不接受该权限，避免“force”命令成为修改只读Application Root的后门。
+- `syncSystemAssetsToUserAssets`明确排除`.staging`，即使进程崩溃留下临时文件，也不会把编译中间产物复制到用户assets。
+- 新增只读system-assets、Variable/Profile零写入、runtime import cache与Dockerfile顺序回归。本机根typecheck、Manager typecheck/pack、Variable20项和聚焦Profile测试通过。
+- SSH Arch真实镜像以普通UID/GID启动，system assets报告`compiled 0 stale profile(s)`，Profile catalog加载14项，Agent五工具与Config/Profile/Variable/外部Project Attachment通过；Application Root没有`.agent`。外部Project smoke改用OS临时目录，删除了对`/`父目录可写的错误测试假设。
+- Task 109继续保持实现中：本地与Arch源码权限合同已闭合，但必须等待`0.8.3`公开GHCR、Product Bun与Windows Portable重新执行Release门禁。

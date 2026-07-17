@@ -1,8 +1,8 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中。Manager [`0.1.0-canary.16`](https://github.com/notnotype/neuro-book/actions/runs/29556688067)已通过Trusted Publisher公开，npm `canary`与全新Bun cache中的真实bunx均已验证。[`v0.7.9-canary.20260713.131204Z.3b064b83`](https://github.com/notnotype/neuro-book/releases/tag/v0.7.9-canary.20260713.131204Z.3b064b83)的Release workflow `29252852294`全绿，九个资产已公开，Windows Portable与Linux x64 Product真实浏览器门禁通过。任务目标现已扩展到Linux AArch64、macOS x64/ARM64与`linux/arm64` OCI交付；[PR #11](https://github.com/notnotype/neuro-book/pull/11)已证明相关资产能够构建，但Release Manifest消费端、Container Engine持久化与跨平台验收尚未闭合。下一应用canary及其Portable/Product Bun、GHCR A→B、Linux AArch64和macOS终验完成前，Task 105不归档。
+> 当前状态：实现中。Manager `0.1.0-canary.17`已通过Trusted Publisher公开；应用[`v0.8.2-canary.20260717.064538Z.9cdfec34`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.2-canary.20260717.064538Z.9cdfec34)九个资产与Windows/Linux Release门禁全绿。真实GHCR空目录安装随后发现Compose缺State Root `.env`挂载，且Product运行时仍向只读`/app/.agent`写staging/cache；当前修复已在SSH Arch普通UID/GID本地镜像完成HTTP、Profile catalog和Agent五工具验证。Manager `.18`与应用`0.8.3`公开复验完成前，Task 105不归档。
 
-> 2026-07-17发布状态：`manager-v0.1.0-canary.15`保留为失败审计tag；修复后的`.16` workflow `29556688067`全绿并已公开。应用`0.8.1` workflow `29557566537`在Product预检阶段失败且保持零资产，下一版本使用`0.8.2`，不复用失败tag。
+> 2026-07-17发布状态：`manager-v0.1.0-canary.15`与应用`0.8.1`保留为失败审计记录；Manager `.17`和应用`0.8.2`已公开。当前后续patch只修复GHCR非root运行与只读Product Root合同，不复用既有tag。
 
 ## Relative documents refs
 
@@ -699,3 +699,13 @@ uninstall
 - 公开Manager `.16`实测`neuro-book install --version <app-version>`时只打印Manager版本并以0退出。根因是Commander顶层`.version()`与install、update、runtime install的子命令`--version`重名，父命令选项会跨过子命令截获参数；因此原CLI文档中的显式应用版本选择实际上不可用。
 - 使用Commander官方`enablePositionalOptions()`硬切参数位置：`neuro-book --version`继续输出Manager版本，全局`--root/--instance`必须位于子命令前，子命令后的`--version`归install/update/runtime自身。现有Portable Launcher和文档本来就使用`--root <path> <command>`顺序，无需兼容两套协议。
 - npm pack审计现在从真实tgz安装bundle，分别断言顶层Manager版本输出与`install --version ... --dry-run`确实进入install JSON计划。Manager typecheck、18 files / 63 tests和5文件约0.35 MiB pack均通过；修复将使用新的`.17`发布，不复用`.16`。
+### 2026-07-17 GHCR非root安装与只读Product Root收口
+
+- 公开Manager `.17`从空目录安装GHCR时，容器先因`/app/.env`不可写失败。根因是Compose只挂载`workspace/`、`config.yaml`和`logs/`，遗漏State Root `.env`；Manager现对GHCR与Source Docker统一增加`../.env:/app/.env`，并由Compose合同测试固定。
+- 补齐`.env`后，启动继续在`compileVariableDefinitions()`创建`/app/.agent/workspace/...`时失败。进一步审计发现Profile/Variable编译、Profile同步、worker fan-in、预览和runtime artifact import cache均残留cwd写入。这不是容器权限配置问题，不能通过root用户或`chmod /app`规避。
+- 编译staging现在按显式源码root定位到同级`agent/.staging`：系统源码构建仍位于Application Root，用户Profile/Variable与运行cache自然位于State Root。Product运行时对内置system assets使用`writePolicy=forbid`；全新时零写入，过期时提示重新构建/安装匹配Product。
+- runtime artifact import带cache key时必须显式传`cacheRoot`，类型系统阻止未来再次从cwd猜测。系统Profile catalog使用用户Agent `.staging/runtime-artifact-import-cache`，Variable与World Engine分别使用各自可写领域根。
+- Docker runner在最终Product tsconfig写入后执行`prepare-system-assets --force --product-build`，让Variable/Profile manifest绑定最终镜像路径。`--product-build`只属于组装阶段，普通运行和HTTP同步不能借此写只读system assets。
+- SSH Arch以宿主普通UID/GID构建当前源码镜像并挂载独立State Root。SQLite、HTTP版本、14个Profile catalog、Agent read/write/edit/apply_patch/bash、Config/Profile/Variable、外部Project图片与Attachment均通过；`/app/.agent`不存在，runtime cache只出现在`workspace/.nbook/agent/.staging`。
+- Product Agent smoke原先把外部Project建在`${stateRoot}-external-project-*`，同根容器会得到`/app-external-project-*`并错误假设根目录可写。runner现使用系统临时目录表达真正的外部绝对Project，不改变生产路径能力。
+- 实际计划差异：原先只预期修复Compose `.env`挂载；真实链路继续暴露了Product artifact freshness和动态import cache两层问题。本轮选择完成系统性只读合同，而不是逐个EACCES打补丁。下一步发布Manager `.18`与应用`0.8.3`，再用公开npm/GHCR执行空目录安装、doctor与HTTP复验。

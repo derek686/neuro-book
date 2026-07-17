@@ -380,7 +380,7 @@ function assertNbookRuntimePackage(packageRoot) {
  * 在 Product Root 内准备系统 assets，确保 artifact 依赖绑定 Product Runtime。
  */
 async function prepareProductSystemAssets() {
-    await run("bun", [".output/server/scripts/build/prepare-system-assets.ts", "--force"], {
+    await run("bun", [".output/server/scripts/build/prepare-system-assets.ts", "--force", "--product-build"], {
         cwd: PRODUCT_ROOT,
     });
 }

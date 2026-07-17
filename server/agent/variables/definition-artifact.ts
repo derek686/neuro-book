@@ -50,22 +50,41 @@ type DefinitionFileEntry = {
 /**
  * 编译变量 definition root，生成运行时 `.compiled` artifact。
  */
-export async function compileVariableDefinitions(options: {definitionRoot: string; rootLabel?: string; skipFresh?: boolean}): Promise<VariableDefinitionManifest> {
+export async function compileVariableDefinitions(options: {
+    definitionRoot: string;
+    rootLabel?: string;
+    skipFresh?: boolean;
+    /** Product 内置系统 assets 使用 forbid；新鲜时零写入，过期时要求重建 Product。 */
+    writePolicy?: "allow" | "forbid";
+    /** 非空时覆盖默认的 definition root 同级 Agent staging 根。 */
+    stagingRoot?: string;
+}): Promise<VariableDefinitionManifest> {
     const definitionRoot = resolve(options.definitionRoot);
     const compiledDir = join(definitionRoot, VARIABLE_DEFINITION_COMPILED_DIR);
-    const buildCompiledDir = resolve(process.cwd(), ".agent", "workspace", "variable-definition-build", randomUUID());
-    await mkdir(buildCompiledDir, {recursive: true});
+    const buildCompiledDir = join(
+        resolve(options.stagingRoot ?? join(dirname(definitionRoot), ".staging")),
+        "variable-definition-build",
+        randomUUID(),
+    );
     const existingManifest = await readVariableDefinitionManifest(definitionRoot);
     const files = await findDefinitionFiles(definitionRoot);
     const definitions: VariableDefinitionManifestItem[] = [];
+    let compiledCount = 0;
     try {
         for (const file of files) {
             const existingItem = existingManifest.definitions.find((item) => item.fileName === file.fileName);
-            if (options.skipFresh && existingItem && (await validateVariableDefinitionArtifact(definitionRoot, existingItem, {requireTypeArtifact: true})).fresh) {
+            if ((options.skipFresh || options.writePolicy === "forbid")
+                && existingItem
+                && (await validateVariableDefinitionArtifact(definitionRoot, existingItem, {requireTypeArtifact: true})).fresh) {
                 definitions.push(existingItem);
                 continue;
             }
+            if (options.writePolicy === "forbid") {
+                throw new Error(`Product 内置 variable definition 已过期或缺失：${file.fileName}。请重新构建或安装与源码匹配的 Product。`);
+            }
+            await mkdir(buildCompiledDir, {recursive: true});
             definitions.push(await compileDefinitionFile(definitionRoot, buildCompiledDir, file));
+            compiledCount += 1;
         }
         const nextDefinitions = definitions.sort((left, right) => left.fileName.localeCompare(right.fileName));
         const manifest: VariableDefinitionManifest = {
@@ -74,6 +93,15 @@ export async function compileVariableDefinitions(options: {definitionRoot: strin
             definitionsRoot: options.rootLabel ?? normalizeArtifactPath(definitionRoot),
             definitions: nextDefinitions,
         };
+        const publishRequired = compiledCount > 0
+            || !definitionsEqual(existingManifest.definitions, nextDefinitions)
+            || existingManifest.definitionsRoot !== manifest.definitionsRoot;
+        if (!publishRequired) {
+            return manifest;
+        }
+        if (options.writePolicy === "forbid") {
+            throw new Error("Product 内置 variable definition manifest 与源码不匹配。请重新构建或安装与源码匹配的 Product。");
+        }
         await commitArtifacts(buildCompiledDir, compiledDir, manifest);
         return manifest;
     } finally {
@@ -108,7 +136,7 @@ export async function loadCompiledVariableDefinitions(input: {
             const loaded = await importDefinitions(join(root, VARIABLE_DEFINITION_COMPILED_DIR, item.artifactFileName), {
                 sha256: item.artifactSha256,
                 bytes: item.artifactBytes,
-            });
+            }, join(dirname(root), ".staging", "runtime-artifact-import-cache"));
             for (const definition of loaded) {
                 if (definition.namespace !== input.namespace) {
                     throw new Error(`${file.fileName} 只能注册 ${input.namespace}.*，实际为 ${definition.namespace}.${definition.key}`);
@@ -243,10 +271,15 @@ async function compileDefinitionFile(root: string, compiledDir: string, file: De
     }
 }
 
-async function importDefinitions(artifactPath: string, artifactHash: {sha256: string; bytes: number}): Promise<VariableDefinition[]> {
+async function importDefinitions(
+    artifactPath: string,
+    artifactHash: {sha256: string; bytes: number},
+    runtimeCacheRoot?: string,
+): Promise<VariableDefinition[]> {
     const mod = await importRuntimeArtifact<{default?: unknown; definitions?: unknown}>(artifactPath, {
         cacheKey: artifactHash.sha256,
         cacheNamespace: "variable-definition",
+        cacheRoot: resolve(runtimeCacheRoot ?? dirname(artifactPath)),
         expectedBytes: artifactHash.bytes,
     });
     const value = mod.definitions ?? mod.default;

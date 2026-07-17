@@ -221,6 +221,7 @@ async function importHashedTypeScript<TModule extends object>(
         return await importRuntimeArtifact<TModule>(cachePath, {
             cacheKey: hash,
             cacheNamespace: `world-engine-${label}`,
+            cacheRoot: path.join(path.dirname(filePath), ".runtime-artifact-import-cache"),
             expectedBytes: Buffer.byteLength(compiled, "utf-8"),
         });
     } catch (error) {

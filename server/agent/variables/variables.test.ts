@@ -731,4 +731,49 @@ describe("Agent variable system", () => {
             await rm(root, {recursive: true, force: true});
         }
     });
+
+    it("只读 Product variable definition 新鲜时零写入，过期时要求重建", async () => {
+        const root = resolve(".agent", "workspace", "variable-definition-readonly-test", randomUUID());
+        const stagingRoot = resolve(root, "runtime-staging");
+        const definitionPath = resolve(root, "definitions.ts");
+        const manifestPath = resolve(root, ".compiled", "manifest.json");
+        await mkdir(root, {recursive: true});
+        await writeFile(definitionPath, [
+            "import {Type} from \"typebox\";",
+            "import {defineProjectVariable} from \"nbook/server/agent/variables/registry\";",
+            "export const definitions = [defineProjectVariable({",
+            "    key: \"styleGuide\",",
+            "    schema: Type.String(),",
+            "})];",
+            "export default definitions;",
+            "",
+        ].join("\n"), "utf8");
+        try {
+            await compileVariableDefinitions({definitionRoot: root, stagingRoot});
+            await rm(stagingRoot, {recursive: true, force: true});
+            const manifestBefore = await readFile(manifestPath, "utf8");
+
+            const fresh = await compileVariableDefinitions({
+                definitionRoot: root,
+                skipFresh: true,
+                writePolicy: "forbid",
+                stagingRoot,
+            });
+            expect(fresh.definitions).toHaveLength(1);
+            await expect(readFile(stagingRoot, "utf8")).rejects.toThrow();
+            expect(await readFile(manifestPath, "utf8")).toBe(manifestBefore);
+
+            await writeFile(definitionPath, (await readFile(definitionPath, "utf8")).replace("Type.String()", "Type.Number()"), "utf8");
+            await expect(compileVariableDefinitions({
+                definitionRoot: root,
+                skipFresh: true,
+                writePolicy: "forbid",
+                stagingRoot,
+            })).rejects.toThrow("请重新构建或安装与源码匹配的 Product");
+            await expect(readFile(stagingRoot, "utf8")).rejects.toThrow();
+            expect(await readFile(manifestPath, "utf8")).toBe(manifestBefore);
+        } finally {
+            await rm(root, {recursive: true, force: true});
+        }
+    });
 });

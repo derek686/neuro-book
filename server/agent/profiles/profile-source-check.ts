@@ -8,8 +8,6 @@ import {compileProfileArtifacts} from "nbook/server/agent/profiles/profile-artif
 import {resolveSystemNbookRoot} from "nbook/server/workspace-files/system-workspace-assets";
 import {resolveUserNbookRoot} from "nbook/server/workspace-files/workspace-runtime-root";
 
-const PROFILE_SOURCE_CHECK_ROOT = resolve(process.cwd(), ".agent", "workspace", "profile-source-check");
-
 export type ProfileSourceCheckRoots = {
     systemProfileRoot?: string;
     userProfileRoot?: string;
@@ -28,7 +26,7 @@ export async function withProfileSourceOverride<T>(
 ): Promise<T> {
     const sourceRoot = input.roots?.userProfileRoot ?? defaultUserProfileRoot();
     const systemRoot = input.roots?.systemProfileRoot ?? defaultSystemProfileRoot();
-    const temporaryRoot = resolve(PROFILE_SOURCE_CHECK_ROOT, randomUUID());
+    const temporaryRoot = resolve(dirname(sourceRoot), ".staging", "profile-source-check", randomUUID());
     try {
         if (existsSync(sourceRoot)) {
             await cp(sourceRoot, temporaryRoot, {recursive: true, force: true});

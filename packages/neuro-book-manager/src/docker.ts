@@ -26,6 +26,7 @@ export async function writeDockerCompose(input: {
             volumes: [
                 `${stateRelative}/workspace:/app/workspace`,
                 `${stateRelative}/config.yaml:/app/config.yaml`,
+                `${stateRelative}/.env:/app/.env`,
                 `${stateRelative}/logs:/app/logs`,
             ],
             restart: "unless-stopped",
@@ -37,6 +38,7 @@ export async function writeDockerCompose(input: {
             volumes: [
                 `${stateRelative}/workspace:/app/workspace`,
                 `${stateRelative}/config.yaml:/app/config.yaml`,
+                `${stateRelative}/.env:/app/.env`,
                 `${stateRelative}/logs:/app/logs`,
             ],
             restart: "unless-stopped",

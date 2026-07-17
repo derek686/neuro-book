@@ -15,8 +15,9 @@ describe("Docker Compose部署合同", () => {
         const root = await mkdtemp(join(tmpdir(), "nbook-compose-"));
         roots.push(root);
         const output = await writeDockerCompose({root, stateRoot: root, profile: "source-docker", image: "neuro-book:test", port: 3000});
-        const compose = parse(await readFile(output, "utf8")) as {services: {app: {user?: string}}};
+        const compose = parse(await readFile(output, "utf8")) as {services: {app: {user?: string; volumes: string[]}}};
         if (process.platform === "win32") expect(compose.services.app.user).toBeUndefined();
         else expect(compose.services.app.user).toBe(`${process.getuid?.()}:${process.getgid?.()}`);
+        expect(compose.services.app.volumes).toContain("../.env:/app/.env");
     });
 });
