@@ -48,6 +48,7 @@
 - Agent Session列表会隔离路径或metadata损坏的单文件；相同问题集合只告警一次，避免每次列表刷新重复淹没日志。历史测试产生的235个无用户消息Session已带SHA256清单可逆归档，真实Repository issue归零。Harness在运行时要求显式Repository或RuntimePaths，Bun也默认忽略Product/Output/staging目录，测试和临时runtime不能再静默写入真实State Root。
 - 文件路径现在统一遵循`RuntimePaths -> WorkspaceRootRef/ProjectPath -> File Scope -> Resolved File Address`。Agent不再拥有独立路径语法，Workspace API、History、World Engine/Plot、Profile/Skill、Session与bash核心均由入口显式传入root，不从cwd反推领域身份。
 - 本地Windows隔离Product与SSH Arch原生Product已在无根`node_modules`、分离State Root和外部Project条件下通过Agent五工具、Attachment migration/rollback、Config/Profile/Variable、SQLite migration与HTTP；Arch Source Docker在容器内构建，并在正式`/app`同根布局通过同一Agent/Attachment与HTTP版本门禁。最终源码重新构建的Windows隔离Product再次通过迁移逐字节回滚、State Root移动和HTTP 200，并确认Product runtime不再包含测试源码或依赖测试helper；完整Harness/black-box为187/187。公开Release、Windows Portable、Product Bun和GHCR仍需新canary发布后验证。
+- Manager `.15`发布在GitHub clean checkout暴露共享Runtime隐式依赖`.nuxt/tsconfig.json`，npm未发布且公开`canary`仍为`.14`。共享`server/runtime`现有独立tsconfig与release typecheck门禁；无`.nuxt`隔离clone的Manager 18 files / 63 tests已通过。下一次Manager发布使用`.16`，不复用失败的`.15` tag。
 
 迁移时请保留完整State Root。Windows Portable用户只复制完整`data/`到新解压目录，不要复制旧根`workspace/`；如果doctor报告`state.shadow-workspace`，先分别备份并人工比较两个目录，再决定保留内容。
 

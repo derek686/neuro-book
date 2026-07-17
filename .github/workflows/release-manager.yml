@@ -42,6 +42,7 @@ jobs:
 
       - name: Verify package
         run: |
+          bun run runtime:typecheck
           bun run manager:typecheck
           bun run manager:test
           bun run manager:pack

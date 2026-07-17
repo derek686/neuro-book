@@ -641,3 +641,10 @@ Profile/Harness             -> 上述稳定 Interface
 - HTTP全局Harness现在由async dispose完整释放。Config完整`52/52`通过且不再产生`runtime.lease.lock`未处理异常；Task 109路径组合为`19 files / 107 tests`，完整Harness/black-box为`187/187`，根typecheck通过。
 - 基于最终源码再次完成隔离Product build/stage、Attachment migration rollback、Agent五工具、Config/Profile/Variable、外部Project Attachment、State Root移动恢复与HTTP 200。Product根没有`node_modules`、影子`workspace/`或测试源码；Product smoke改用生产`toolset/builtin`与Pi Faux Provider公开API，不再依赖被打包的`server/agent/test*`。测试端口39279已释放。公开Source/Product overlay、Windows Portable、GHCR和Actions实跑仍未完成，Task状态继续保持“实现中”。
 - SSH Arch最终Docker补跑使用Bun参数边界`-- --same-root`，在正式`Application Root = State Root = /app`布局通过Agent State Root smoke；随后容器启动完成并由`/api/app/version`返回当前package版本。测试容器、镜像、远端隔离目录和本地传输归档均已清理。
+
+### 2026-07-17 共享Runtime clean-checkout编译合同
+
+- Manager `.15` workflow暴露了一个本机缓存掩盖的模块边界漏洞：`server/runtime`虽然在领域上已经独立，却没有自己的tsconfig。Vite/OXC转换被Manager通过alias导入的源文件时，会向上读取根`tsconfig.json`；clean checkout没有`.nuxt/tsconfig.json`，因此4个Manager suite在收集测试前失败。
+- 未使用Vitest私有转换选项或类型断言关闭OXC tsconfig解析。Vite 8公开`OxcOptions`不提供该能力，强行注入会把Task 109核心边界绑定到构建器内部实现。也没有运行Nuxt prepare，因为Manager和共享Runtime不应依赖应用生成目录。
+- `server/runtime/tsconfig.json`现在独立声明ESNext/Bundler、严格类型和`nbook/*`根alias；`runtime:typecheck`进入本地Manager release helper与GitHub workflow。该边界继续只包含Generic File Path、RuntimePaths、Installation Paths与State Root Integrity，不拆出过早的独立workspace package。
+- 无`.nuxt`隔离clone中，修复前为4个suite transform失败、其余14个通过；修复后Manager完整18 files / 63 tests通过，独立Runtime与Manager typecheck均通过。`.15`失败tag保留，下一公开Manager必须使用`.16`。

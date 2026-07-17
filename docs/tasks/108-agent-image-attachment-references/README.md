@@ -801,3 +801,9 @@ Task 108 与 Task 109 合并后完成最终串行复核：
 - Attachment/Stored聚焦10文件56项、完整Harness/black-box 187项、Variables/包装聚焦23项、根与Manager typecheck、Manager 63项及npm pack审计均通过。公开npm canary与业务提交package/lock继续保持Manager `.14`，工作区干净后由release helper统一生成并发布`.15`；公开Product Bun、GHCR、Windows Portable和浏览器图片展示仍未验收。
 - SSH Arch Source Docker最终在`/app`同根布局重新执行Product Agent smoke并通过，容器HTTP版本接口返回当前package版本；本轮测试容器、镜像、远端隔离目录和本地传输归档均已清理。该证据仍属于当前源码，不替代公开GHCR验证。
 - 发布前完整Harness回归发现manual compact使用未登记的fire-and-forget任务：命令状态结束后仍可能继续drain follow-up，而服务或测试已经删除Session Root。Harness现在统一登记普通后台任务，`drainBackgroundTasks()`与`dispose()`都会等待compact和summarizer归零；compact回归由`started -> drain -> compaction committed`直接证明。同期将steer/follow-up并发测试改为显式工具/Provider闸门，完整Harness与black-box再次达到187/187且无未处理异步错误。
+
+### 2026-07-17 Manager canary首次发布阻断
+
+- Task 108的Attachment hard cut需要随新Manager公开；`.15`的bundle、typecheck、63项测试和pack本身在本机通过，但GitHub clean checkout在导入Task 109共享Runtime时被根Nuxt tsconfig的`.nuxt`依赖阻断，npm publish没有执行，公开`canary`仍为`.14`。
+- 修复没有复制Attachment/State Integrity实现、没有mock共享Module，也没有让Manager workflow先运行Nuxt prepare。`server/runtime`改为独立可编译边界，release helper和workflow显式运行`runtime:typecheck`；无`.nuxt`隔离clone的Manager 18 files / 63 tests已通过。
+- `.15`保留失败审计记录，下一次发布使用`.16`。公开Product Bun、GHCR、Windows Portable与浏览器图片展示仍未验收，因此本任务状态不提前改为完成。

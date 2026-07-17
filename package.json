@@ -51,6 +51,7 @@
     "studio": "bunx prisma studio --config ./prisma.config.ts",
     "release": "bun scripts/release/release.ts",
     "manager:release": "bun scripts/release/manager-release.ts",
+    "runtime:typecheck": "tsc --noEmit -p server/runtime/tsconfig.json",
     "manager:build": "bun run --cwd packages/neuro-book-manager build",
     "manager:test": "bun run --cwd packages/neuro-book-manager test",
     "manager:typecheck": "bun run --cwd packages/neuro-book-manager typecheck",
