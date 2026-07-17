@@ -1,8 +1,8 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中。Manager `0.1.0-canary.17`已通过Trusted Publisher公开；应用[`v0.8.2-canary.20260717.064538Z.9cdfec34`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.2-canary.20260717.064538Z.9cdfec34)九个资产与Windows/Linux Release门禁全绿。真实GHCR空目录安装随后发现Compose缺State Root `.env`挂载，且Product运行时仍向只读`/app/.agent`写staging/cache；当前修复已在SSH Arch普通UID/GID本地镜像完成HTTP、Profile catalog和Agent五工具验证。Manager `.18`与应用`0.8.3`公开复验完成前，Task 105不归档。
+> 当前状态：实现中。Manager `0.1.0-canary.18`已通过Trusted Publisher公开；应用[`v0.8.4-canary.20260717.112909Z.7ac788db`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.4-canary.20260717.112909Z.7ac788db)九个资产、Windows/Linux Product、Portable、GHCR、Stage 0与公开payload门禁全绿。SSH Arch公开Product Bun首次安装随后发现空State Root的Attachment dry-run错误要求Agent目录预先存在；修复已完成并将进入`0.8.5`。公开Product Bun/GHCR最终用户链复验完成前，Task 105不归档。
 
-> 2026-07-17发布状态：`manager-v0.1.0-canary.15`与应用`0.8.1`保留为失败审计记录；Manager `.17`和应用`0.8.2`已公开。当前后续patch只修复GHCR非root运行与只读Product Root合同，不复用既有tag。
+> 2026-07-17发布状态：`manager-v0.1.0-canary.15`、应用`0.8.1`与`0.8.3`保留为失败审计记录；Manager `.18`和应用`0.8.4`已公开。下一patch只修复空Workspace Root的Attachment migration preflight，不复用既有tag，也不发布未变化的Manager。
 
 ## Relative documents refs
 
@@ -717,3 +717,12 @@ uninstall
 - 候选manifest把158个`@earendil-works/pi-*`文件记录为根`node_modules`依赖；Installation Root合同明确没有根`node_modules`，因此Product overlay与Source archive组合后必然失效。第二层问题是构建manifest使用`.output/server/assets/...`物理root label，与运行时逻辑label不同。
 - Product Profile/Variable现共享`.output/server`自包含编译上下文；Nitro后处理和Release归档前使用同一个只读合同验证依赖边界、manifest root与freshness。没有修改Release Manifest或Installation Manifest schema，也没有让Manager在运行时修复Product。
 - 本机Source ZIP + Windows Product ZIP隔离组装、0 stale system assets预检与Agent State Root smoke通过。下一应用patch为`0.8.4`；仍需公开workflow重新验证Product Bun、Windows Portable、GHCR、Stage 0与最终payload。
+
+### 2026-07-17 0.8.4公开闭环与空State Root安装阻断
+
+- `0.8.4` workflow `29576999784`已全绿：Windows/Linux Product、Portable、GHCR、Stage 0、两端Agent State Root、Portable shadow workspace、真实启动、公开payload checksum与GHCR digest均通过；Release最终公开9个资产和完整Manifest。
+- 公开Manifest严格对齐应用版本、`c61360c7b147ed16d7c4421c8644f558d352eb18` source revision、Manager最低版本`.18`、两个Product平台与固定GHCR digest。npm公开Manager `.18`的顶层/子命令参数合同也已再次确认。
+- SSH Arch使用独立HOME、空Installation Root和公开资产安装Product Bun时，SQLite migration成功，随后Attachment dry-run因`workspace/.nbook/agent`不存在而失败。该链路证明候选Product门禁不能替代Manager首次安装事务。
+- 失败操作已按合同恢复：operation journal为`committed / rolled-back`，安装根不残留Product、Source文件、Manifest、State Root文件、Manager wrapper或Runtime版本目录；仅保留审计journal和空目录骨架。
+- 根因是Attachment migration preflight已得到0个session计划后仍无条件检查Agent Root写权限。修复位于migration领域Module：空计划直接返回且dry-run零写入；不让Fresh Install伪造Agent数据目录，也不放宽任何非空session的权限/checksum门禁。
+- 新增空Workspace Root回归并先红后绿；Attachment migration完整22项、Manager迁移/Operation 3 files / 19 tests和根typecheck通过。Manager bundle未变化，下一应用patch使用`0.8.5`；公开Product Bun与GHCR需在新资产发布后重新验收。

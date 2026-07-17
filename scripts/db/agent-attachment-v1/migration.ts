@@ -709,6 +709,9 @@ async function planWorkspace(rootWorkspace: string): Promise<AttachmentSessionPl
 
 /** dry-run 不尝试写探针；检查父目录权限和已存在 blob/引用的一致性。 */
 async function verifyPreflightStorage(rootWorkspace: string, plans: AttachmentSessionPlan[]): Promise<void> {
+    // 全新 Workspace Root 没有 Agent 目录，也没有任何历史 session 需要迁移。
+    // dry-run 必须保持零写入，不能为了权限探针创建一个原本不存在的领域目录。
+    if (plans.length === 0) return;
     const agentRoot = resolve(rootWorkspace, ".nbook", "agent");
     await access(agentRoot, constants.W_OK);
     const adapter = new LocalAttachmentBlobAdapter(resolve(agentRoot, "attachments"));

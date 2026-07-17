@@ -10,7 +10,7 @@
 
 ## Status
 
-Implemented / Local + Arch Product/Docker Verified / Public Release Pending（浏览器验收未执行）
+Implemented / Public 0.8.4 Platform Verified / 0.8.5 Fresh Install Pending（浏览器验收未执行）
 
 ## User Request / Topic
 
@@ -820,3 +820,12 @@ Task 108 与 Task 109 合并后完成最终串行复核：
 - Linux与Windows最终都在Product system Profile freshness预检退出，公开payload job因此未运行，GitHub Release保持零资产。该失败属于Task 109 Product编译上下文：manifest引用最终Product不存在的根`node_modules`，并非Attachment codec、Store、migration WAL或图片route回归。
 - 修复后的本机Source ZIP + Windows Product ZIP隔离组装再次通过Agent State Root移动smoke；本轮没有重复执行真实用户Workspace的Attachment migration，也没有自动执行浏览器图片展示。
 - Task 108继续保持Public Release Pending。`0.8.3`中已经通过的候选步骤可作为故障隔离证据，但不能替代`0.8.4`完整公开Product Bun、Portable、GHCR与payload验证。
+
+### 2026-07-17 0.8.4公开首次安装发现空计划语义缺口
+
+- `0.8.4` Release workflow已完整通过Attachment migration、Linux Product State Root、Windows Portable State Root与shadow workspace、真实启动、公开payload和GHCR digest复验；9个公开资产与Manifest均已发布。
+- SSH Arch随后以真实用户方式从空目录运行公开Manager `.18`安装Product Bun。SQLite migration成功，但Attachment dry-run在没有任何历史session、也没有`workspace/.nbook/agent`目录时调用`access(agentRoot, W_OK)`并失败。
+- 这不是历史数据损坏、权限不足或Product归档遗漏：最小回归在本机空Workspace Root稳定复现同一`ENOENT`；公开安装失败后的Operation Journal为`committed / rolled-back`，没有Attachment plan、Product、Manifest或State Root残留。
+- migration preflight现在明确区分空计划与非空计划。0个session时直接返回空报告，保持dry-run零写入；存在session时仍检查Agent Root写权限、既有blob一致性、外部引用可读性和全部checksum。
+- 新回归先确认修复前失败，再验证空Workspace Root不会创建`.nbook/agent`；完整migration suite为22/22，Manager migration/operation聚焦19项与根typecheck通过。
+- Task 108仍保持Public Release Pending。修复将进入`0.8.5`，随后重新执行公开Product Bun与GHCR首次安装；不会重复迁移真实开发Workspace，也不把CI浏览器启动smoke写成人工图片展示验收。

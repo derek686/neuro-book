@@ -32,6 +32,30 @@ describe("Agent Attachment v1 migration", () => {
         await Promise.all(roots.splice(0).map((root) => rm(root, {recursive: true, force: true})));
     });
 
+    it("全新 Workspace Root 没有 Agent 目录时 dry-run 返回空计划且不创建目录", async () => {
+        const root = await mkdtemp(join(tmpdir(), "nbook-agent-attachment-empty-"));
+        roots.push(root);
+
+        const report = await runAgentAttachmentMigration({
+            rootWorkspace: root,
+            mode: "dry-run",
+            runId: "empty-workspace",
+        });
+
+        expect(report).toMatchObject({
+            runId: "empty-workspace",
+            mode: "dry-run",
+            status: "planned",
+            scannedSessions: 0,
+            migratedSessions: 0,
+            images: 0,
+            uniqueAttachments: 0,
+            bytes: 0,
+            sessions: [],
+        });
+        await expect(stat(join(root, ".nbook", "agent"))).rejects.toMatchObject({code: "ENOENT"});
+    });
+
     it("dry-run 复用真实转换路径，但不写 lock、blob、backup 或 manifest", async () => {
         const root = await createWorkspace();
         roots.push(root);

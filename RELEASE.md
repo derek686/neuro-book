@@ -1,5 +1,29 @@
 # Release Notes
 
+## 0.8.5-canary - 2026-07-17
+
+本次patch修复全新Product Bun安装在首次数据迁移阶段失败的问题。`0.8.4`的Windows/Linux Product、Portable、GHCR和公开资产校验均已通过，但公开Manager从空State Root安装Product Bun时，会因为尚未存在Agent数据目录而中止并回滚。
+
+### 更新说明
+
+- Attachment迁移的dry-run现在把“没有任何Agent session”视为合法空计划，不再要求`workspace/.nbook/agent`预先存在。
+- 空计划仍保持严格零写入：不会为了权限探针创建Agent目录、migration lock、manifest或Attachment Store。
+- 只要存在session，原有的写权限、旧图片解码、Attachment引用和checksum完整性检查仍全部执行。
+- Manager事务合同不变：没有旧图片时不创建Attachment migration operation；安装失败仍只保留已提交的`rolled-back`审计journal，不残留Product、Manifest、State Root文件或wrapper。
+
+### 迁移指南
+
+- 新安装请使用`0.8.5`或更高版本；不要选择`0.8.4`进行空目录Product Bun安装。
+- 已有`0.8.4`实例如果已经成功安装且存在Agent State Root，无需手工创建目录或运行迁移脚本，继续通过Manager更新即可。
+- Windows Portable仍迁移完整`data/`；其他Profile保留完整State Root。不要手工创建假的session目录来绕过检查。
+
+### 验证与已知边界
+
+- `0.8.4` workflow `29576999784`已完成Windows/Linux Product、Portable、GHCR、Stage 0、真实启动、State Root、shadow workspace、公开payload与digest复验，最终公开9个资产。
+- SSH Arch使用公开Manager `.18`与`0.8.4`执行空目录Product Bun安装，稳定复现`access workspace/.nbook/agent`的`ENOENT`；失败事务正确回滚，安装根仅保留`outcome=rolled-back`的operation journal。
+- 新增空Workspace Root零写入回归，Attachment migration完整suite为22/22；Manager迁移/Operation聚焦为3 files / 19 tests，根typecheck通过。
+- `0.8.5`公开Product Bun与GHCR安装链仍需Release workflow及发布后Arch复验；未自动执行人工浏览器操作。
+
 ## 0.8.4-canary - 2026-07-17
 
 本次patch修复`0.8.3`候选Product在正式启动预检中错误报告内置Profile过期的问题。该问题会同时阻断Linux Product Bun和Windows Portable，`0.8.3`因此没有公开应用资产。

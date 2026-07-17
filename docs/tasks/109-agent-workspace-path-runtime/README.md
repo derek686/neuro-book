@@ -1,6 +1,6 @@
 # Task 109：统一 File Scope、File Address 与 Product Runtime 路径合同
 
-> 当前状态：实现中（本地与Arch当前源码Product/Docker门禁已闭合，公开发布与Windows Portable待完成）。Generic File Path、Project Path、File Scope、Resolved File Address 与不可变 RuntimePaths 已完成硬切；Workspace Files/History、World Engine/Plot、Profile/Skill Catalog、Harness、Session Repository 和 bash 均由进程/HTTP Adapter 显式传入物理根，核心 Module 不再重新发现 cwd 或环境。共享 State Root integrity 由 Manager doctor/status/start 与应用 bootstrap 共用。本机Windows隔离Product与SSH Arch原生Product/Source Docker已完成Agent五工具、Config/Profile/Variable、外部Project图片与Attachment、迁移回滚、State Root恢复和HTTP；公开workflow、Windows Portable、Product Bun与GHCR公开资产仍待完成。
+> 当前状态：实现中（`0.8.4`公开workflow与Windows Portable门禁已闭合，`0.8.5`公开Product Bun/GHCR首次安装待完成）。Generic File Path、Project Path、File Scope、Resolved File Address 与不可变 RuntimePaths 已完成硬切；Workspace Files/History、World Engine/Plot、Profile/Skill Catalog、Harness、Session Repository 和 bash 均由进程/HTTP Adapter 显式传入物理根，核心 Module 不再重新发现 cwd 或环境。共享 State Root integrity 由 Manager doctor/status/start 与应用 bootstrap 共用。Windows Portable真实`data/`、shadow workspace、Linux Product候选与公开payload均已取得平台证据；Arch公开Product Bun在路径runner前被Attachment空计划preflight阻断，需随`0.8.5`完成最终用户链。
 
 ## Relative documents refs
 
@@ -561,17 +561,17 @@ Profile/Harness             -> 上述稳定 Interface
 - [x] Config、Profile Home、Variable 和 HTTP preview 的 managed 与 external Project 聚焦测试。
 - [x] 当前 `RuntimeSessionFacade.workspaceFsRoot` 硬切后的 typecheck 与 Profile 回归重新转绿。
 - [x] Harness 的 RuntimePaths/Repository Root 一致性、不一致拒绝和 Portable `data/workspace` 投影测试。
-- [ ] Config/Profile/Variable 在真实 Windows Portable `data/` Product runtime 中的验证。
+- [x] Config/Profile/Variable 在真实 Windows Portable `data/` Product runtime 中的验证；`0.8.4` Windows verify通过Portable Agent State Root生产runner。
 - [x] Workspace API realpath containment与symlink/junction目录项清理测试。
 - [x] shadow workspace、失效链接和同目标junction/symlink测试。
 - [x] Windows/POSIX 共享 State Root integrity Module 的权限错误 smoke：Windows ACL deny返回`EPERM`，Arch `chmod 000`返回`EACCES`，均保持结构化`inspection-error`；这不是 Product/Arch 部署链路证据。
 - [x] 旧 session 随完整 State Root 移动后继续命中新物理根。
 - [x] 无根 `node_modules` 的本地真实 Product Agent 工具 smoke。
 - [ ] 公开Source archive + Product overlay的Product Bun smoke。
-- [ ] 新Release workflow在GitHub Actions真实跑通Linux Product与Windows Portable Agent State Root步骤。
+- [x] 新Release workflow在GitHub Actions真实跑通Linux Product与Windows Portable Agent State Root步骤；`0.8.4` workflow `29576999784`全绿。
 - [x] SSH Arch 当前源码原生 Product 与 Source Docker 链路；公开 Product Bun、GHCR 与 Windows Portable 仍分别由发布后门禁跟踪。
-- [ ] 真实 Windows Portable `data/` Product runtime 的 Config/Profile/Variable回归；本地隔离Product runner已经覆盖这些Interface，但不能替代Portable managed Runtime、Launcher和真实`data/`布局。
-- [ ] Windows Portable 影子 `workspace/` 诊断：在真实 Portable 根制造分叉后运行 Manager `doctor --json`，确认 `state.shadow-workspace` fail/remediation 且两侧数据不变。
+- [x] 真实 Windows Portable `data/` Product runtime 的 Config/Profile/Variable回归；`0.8.4`候选Portable使用managed Runtime/Tool和真实`data/`布局通过生产runner。
+- [x] Windows Portable 影子 `workspace/` 诊断：`0.8.4` Windows verify在真实Portable根制造分叉，确认`state.shadow-workspace` fail/remediation且两侧marker数据不变。
 
 ## Remaining execution order
 
@@ -690,3 +690,11 @@ Profile/Harness             -> 上述稳定 Interface
 - Arch复用build checkout做Product smoke时还发现聚焦Vitest会通过全局`appLogger`默认cwd创建`workspace/.nbook/logs/server-current.jsonl`。`server/agent/test/setup.ts`现在在任何业务Module导入前把`NEURO_BOOK_LOG_DIR`绑定到唯一OS临时目录，suite结束时等待日志队列并清理；三个聚焦suite通过且临时日志目录为零。生产日志根合同未修改。
 - 实际计划差异：最初只预期定位一个被后处理修改的依赖；候选产物证明根因是编译上下文跨越Product边界，并进一步暴露manifest逻辑root漂移。修复因此收口到共享上下文和归档合同，而不是在runtime关闭dependency检查或重编只读assets。
 - Task 109继续保持实现中。下一公开版本使用`0.8.4`；只有Linux Product Bun、Windows Portable、GHCR与最终公开payload全部通过后，才能把本地候选证据升级为公开Release证据。
+
+### 2026-07-17 0.8.4平台门禁通过与公开Product Bun首次安装结果
+
+- `0.8.4` workflow `29576999784`完整成功。Windows/Linux Product归档、Portable、GHCR、统一Manifest、两端Agent State Root、Windows shadow workspace、真实启动、公开payload bytes/checksum和GHCR digest均通过，Release最终公开9个资产。
+- 这使Windows Portable真实`data/`下的Config/Profile/Variable、State Root移动、Installation Root无影子`workspace/`以及诊断数据不变门禁获得正式平台证据；相关硬门禁已勾选完成。
+- 公开Manifest中Source、两个Product和GHCR共享`c61360c7b147ed16d7c4421c8644f558d352eb18`，Linux Product依赖仍全部位于`.output/server`，`0.8.3`的根`node_modules`与manifest root问题没有复发。
+- SSH Arch公开Product Bun安装在进入Agent路径runner前被Task 108的空Attachment migration preflight阻断：全新State Root没有`workspace/.nbook/agent`时错误执行写权限检查。失败事务完整回滚，没有产生Application Root影子Workspace或错误物理路径。
+- 修复不改变RuntimePaths、WorkspaceRootRef、ProjectPath、File Scope或Product artifact合同；只让0-session migration dry-run保持零写入并返回空计划。路径层平台门禁已经通过，但公开Manager Product Bun/GHCR最终用户链仍需`0.8.5`重跑，因此`公开Source archive + Product overlay的Product Bun smoke`继续不勾选，Task 109仍为Implementing。
