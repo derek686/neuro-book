@@ -2,7 +2,7 @@
 
 > 当前状态：实现中。Manager [`0.1.0-canary.16`](https://github.com/notnotype/neuro-book/actions/runs/29556688067)已通过Trusted Publisher公开，npm `canary`与全新Bun cache中的真实bunx均已验证。[`v0.7.9-canary.20260713.131204Z.3b064b83`](https://github.com/notnotype/neuro-book/releases/tag/v0.7.9-canary.20260713.131204Z.3b064b83)的Release workflow `29252852294`全绿，九个资产已公开，Windows Portable与Linux x64 Product真实浏览器门禁通过。任务目标现已扩展到Linux AArch64、macOS x64/ARM64与`linux/arm64` OCI交付；[PR #11](https://github.com/notnotype/neuro-book/pull/11)已证明相关资产能够构建，但Release Manifest消费端、Container Engine持久化与跨平台验收尚未闭合。下一应用canary及其Portable/Product Bun、GHCR A→B、Linux AArch64和macOS终验完成前，Task 105不归档。
 
-> 2026-07-17发布状态：`manager-v0.1.0-canary.15`保留为失败审计tag；修复后的`.16` workflow `29556688067`全绿并已公开，不移动或复用`.15`。
+> 2026-07-17发布状态：`manager-v0.1.0-canary.15`保留为失败审计tag；修复后的`.16` workflow `29556688067`全绿并已公开。应用`0.8.1` workflow `29557566537`在Product预检阶段失败且保持零资产，下一版本使用`0.8.2`，不复用失败tag。
 
 ## Relative documents refs
 
@@ -686,3 +686,10 @@ uninstall
 - 隔离clone没有`.nuxt`，只共享已安装依赖；修复前稳定得到`4 failed / 14 passed`，修复后为`18 files / 63 tests passed`。共享Runtime typecheck、Manager typecheck和5文件、约0.35 MiB的pack空目录审计均通过。
 - 实际结果与原发布计划不同：`.15` tag与release commit不会移动、删除或复用；下一个可发布版本改为`0.1.0-canary.16`。在npm `canary`真实返回`.16`前，不创建引用新Manager能力的应用canary。
 - `0.1.0-canary.16`最终由workflow `29556688067`在38秒内完成clean-checkout验证与Trusted Publisher发布。npm `canary`返回`.16`，全新`BUN_INSTALL_CACHE_DIR`中的`bunx --bun @notnotype/neuro-book-manager@0.1.0-canary.16 --version`同样返回`.16`；应用canary发布门禁已解除。
+
+### 2026-07-17：0.8.1 Product预检clean-checkout修复
+
+- 应用`v0.8.1-canary.20260717.053159Z.81da7a43` workflow `29557566537`中，Source archive与GHCR镜像构建成功，但Windows/Linux Product都在`Verify Agent State Root paths`阶段失败，assemble及所有公开验证随即跳过；Release保持零资产，没有形成可被Manager选择的半成品Manifest。
+- 根因不是Task 109路径行为失败，而是Product job在clean checkout中先运行根Vitest、后运行`nuxt:build`。根`tsconfig.json`合法继承`.nuxt/tsconfig.json`，但测试执行前尚未运行`nuxt prepare`，Vite/OXC因此在转换`server/agent/test/setup.ts`时报告`Tsconfig not found`。本机残留`.nuxt`曾掩盖该顺序漏洞。
+- 新增统一`test:agent-state-root`脚本，固定执行`nuxt prepare`后再运行两组State Root测试；Windows/Linux Product job只调用该入口，不为整个`server/agent`复制第二套tsconfig，也不改变应用根tsconfig合同。
+- 审计同时发现旧workflow列出的`agent-workspace-location.test.ts`已经不存在，Vitest会静默忽略该路径。新脚本改为真实的`workspace-root-ref.test.ts`与Harness State Root测试；无`.nuxt`隔离clone中原命令稳定复现transform错误，新脚本自行生成`.nuxt`后完成`2 files / 7 tests passed`。失败的`0.8.1` tag保留审计记录，修复后发布新的`0.8.2`。

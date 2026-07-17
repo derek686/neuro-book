@@ -808,3 +808,8 @@ Task 108 与 Task 109 合并后完成最终串行复核：
 - 修复没有复制Attachment/State Integrity实现、没有mock共享Module，也没有让Manager workflow先运行Nuxt prepare。`server/runtime`改为独立可编译边界，release helper和workflow显式运行`runtime:typecheck`；无`.nuxt`隔离clone的Manager 18 files / 63 tests已通过。
 - `.15`保留失败审计记录，下一次发布使用`.16`。公开Product Bun、GHCR、Windows Portable与浏览器图片展示仍未验收，因此本任务状态不提前改为完成。
 - `.16` workflow `29556688067`已全绿，npm `canary`与全新Bun cache中的精确bunx均返回`0.1.0-canary.16`。Manager公开门禁已完成；仍需下一应用canary的Product Bun、GHCR、Windows Portable和图片展示验收。
+
+### 2026-07-17 0.8.1公开资产预检阻断
+
+- `0.8.1`的Windows/Linux Product尚未进入build，Task 108迁移与Attachment smoke也未执行；两个job都因根Vitest在clean checkout缺少预先生成的`.nuxt/tsconfig.json`而在setup转换阶段失败。Release保持零资产，不能把GHCR镜像build成功视为公开GHCR验收完成。
+- Product路径门禁现统一走`test:agent-state-root = nuxt prepare + targeted vitest`，并把已不存在、会被Vitest静默忽略的旧Location测试路径替换为真实`workspace-root-ref.test.ts`。无`.nuxt`隔离clone已通过2 files / 7 tests；下一公开应用版本使用`0.8.2`，Task 108继续保持Public Release Pending。

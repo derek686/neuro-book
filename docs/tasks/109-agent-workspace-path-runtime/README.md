@@ -649,3 +649,9 @@ Profile/Harness             -> 上述稳定 Interface
 - `server/runtime/tsconfig.json`现在独立声明ESNext/Bundler、严格类型和`nbook/*`根alias；`runtime:typecheck`进入本地Manager release helper与GitHub workflow。该边界继续只包含Generic File Path、RuntimePaths、Installation Paths与State Root Integrity，不拆出过早的独立workspace package。
 - 无`.nuxt`隔离clone中，修复前为4个suite transform失败、其余14个通过；修复后Manager完整18 files / 63 tests通过，独立Runtime与Manager typecheck均通过。`.15`失败tag保留，下一公开Manager必须使用`.16`。
 - `.16` workflow `29556688067`已全绿并通过Trusted Publisher写入npm；registry `canary`和全新Bun cache中的公开精确版本均返回`.16`。Task 109仍等待同一源码进入应用canary后的公开Source/Product、Windows Portable与GHCR门禁。
+
+### 2026-07-17 0.8.1 Product门禁执行顺序修复
+
+- `0.8.1` Windows/Linux Product job都在Task 109聚焦测试收集前失败：根Vitest配置加载`server/agent/test/setup.ts`时，clean checkout尚未执行Nuxt prepare，根tsconfig继承的`.nuxt/tsconfig.json`不存在。该失败证明发布前置顺序不完整，不证明路径断言失败。
+- `server/agent`继续属于Nuxt应用边界，不新增第二套独立tsconfig。新增`test:agent-state-root`把`nuxt prepare`与真实`workspace-root-ref.test.ts`、Harness State Root测试固化为单一命令；旧workflow引用的`agent-workspace-location.test.ts`已经不存在且会被Vitest静默忽略。两个Product job共用新入口，无`.nuxt`隔离clone从原错误恢复为2 files / 7 tests通过。
+- `0.8.1` assemble、Windows Portable、Linux Product Bun和公开payload验证均未运行，Release保持零资产。下一版本使用`0.8.2`重新取得真实平台证据，Task状态不提前提升。

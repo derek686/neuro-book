@@ -28,6 +28,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:agent": "vitest run server/agent shared/dto",
+    "test:agent-state-root": "nuxt prepare && vitest run server/workspace-files/workspace-root-ref.test.ts server/agent/harness/agent-workspace-state-root.test.ts",
     "migrate": "bun scripts/db/prisma-migrate.mjs",
     "migrate:deploy": "bun scripts/db/prisma-migrate.mjs --deploy",
     "migrate:agent-attachments": "bun scripts/db/migrate-agent-attachments.ts",

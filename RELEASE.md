@@ -1,6 +1,6 @@
 # Release Notes
 
-## 0.8.1-canary - 2026-07-17
+## 0.8.2-canary - 2026-07-17
 
 本次patch集中修复Agent图片持久化、Portable/自定义State Root文件定位和发布迁移事务。用户图片不再以内联base64长期留在Session中，Agent文件工具也不再把逻辑`workspace`误当成Installation Root下的物理目录。
 
@@ -22,6 +22,7 @@
 
 - 本地Windows隔离Product与SSH Arch原生Product/Source Docker已通过Attachment迁移逐字节回滚、Agent五工具、外部Project图片、State Root移动、Config/Profile/Variable、SQLite与HTTP；完整Harness/black-box为187/187，Manager为18 files / 63 tests。
 - Manager `.16` workflow `29556688067`全绿，npm `canary`和公开精确bunx均已验证。应用公开Product Bun、GHCR、Windows Portable与浏览器图片展示仍需本次Release workflow及人工验收确认。
+- 前一`0.8.1` Release因Product预检在Nuxt prepare之前运行Vitest而保持零资产。新Release门禁使用自包含的`test:agent-state-root`，会在clean checkout先生成Nuxt类型，再执行Task 109路径测试。
 
 ## 0.8.0-canary - 2026-07-15
 
