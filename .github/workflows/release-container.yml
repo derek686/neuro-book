@@ -295,13 +295,11 @@ jobs:
           cp scripts/install/install.cmd dist/install.cmd
           cp scripts/install/install.sh dist/install.sh
           manager_version="$(bun -e 'console.log(require("./packages/neuro-book-manager/package.json").version)')"
-          bun run manager:build
           mkdir -p manager-npm
           npm pack "@notnotype/neuro-book-manager@${manager_version}" --pack-destination manager-npm >/dev/null
           mkdir -p manager-npm/package
           tar -xzf manager-npm/*.tgz -C manager-npm
-          cmp packages/neuro-book-manager/dist/neuro-book.mjs manager-npm/package/dist/neuro-book.mjs
-          cmp packages/neuro-book-manager/dist/schema.mjs manager-npm/package/dist/schema.mjs
+          test "$(bun manager-npm/package/dist/neuro-book.mjs --version)" = "${manager_version}"
           unzip -p dist/neuro-book-windows-x64.zip ".runtime/manager/${manager_version}/neuro-book.mjs" > manager-npm/portable-neuro-book.mjs
           cmp manager-npm/package/dist/neuro-book.mjs manager-npm/portable-neuro-book.mjs
           bun scripts/release/release-assets.ts manifest \
@@ -321,6 +319,7 @@ jobs:
             --ghcr-ref "${APP_IMAGE_NAME}:${{ github.event.release.tag_name }}" \
             --ghcr-digest "${GHCR_DIGEST}" \
             --output dist/release-manifest.json
+          bun -e 'const schema = await import("./manager-npm/package/dist/schema.mjs"); const manifest = await Bun.file("dist/release-manifest.json").json(); schema.parseReleaseManifest(manifest);'
       - name: Upload candidate release bundle
         uses: actions/upload-artifact@v4
         with:

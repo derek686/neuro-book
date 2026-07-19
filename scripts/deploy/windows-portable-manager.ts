@@ -12,6 +12,7 @@ import {installManagedBun, installManagerExecutable, writeManagerWrapper, writeR
 import {installManagedTool, writeManagedToolWrappers} from "nbook/packages/neuro-book-manager/src/tools";
 import type {InstallationManifest} from "nbook/packages/neuro-book-manager/src/types";
 import {MANAGER_VERSION} from "nbook/packages/neuro-book-manager/src/version-info";
+import {materializePublicManagerPackage} from "nbook/scripts/release/public-manager-package";
 import {run, runCapture} from "nbook/scripts/utils/process.mjs";
 import {writeZipArchive} from "nbook/scripts/utils/zip";
 
@@ -36,10 +37,12 @@ async function packagePortable(output: string, sourceArchive: string, productArc
     if (!await exists(outputEntry)) {
         throw new Error("缺少 .output/server/index.mjs，请先执行 bun run nuxt:build。");
     }
-    await run("bun", ["run", "manager:build"], {cwd: ROOT});
     const stage = resolve(ROOT, ".agent", "workspace", "windows-portable-manager-stage");
+    const managerPackageStage = resolve(ROOT, ".agent", "workspace", "windows-portable-manager-npm");
     await rm(stage, {recursive: true, force: true});
+    await rm(managerPackageStage, {recursive: true, force: true});
     await mkdir(stage, {recursive: true});
+    const publicManager = await materializePublicManagerPackage(MANAGER_VERSION, managerPackageStage);
     const sourceFiles = await trackedFiles();
     for (const file of sourceFiles) {
         const target = resolve(stage, file);
@@ -54,8 +57,7 @@ async function packagePortable(output: string, sourceArchive: string, productArc
     const runtime = await installManagedBun(stage);
     const rg = await installManagedTool(stage, "rg");
     const git = await installManagedTool(stage, "git");
-    const managerExecutable = resolve(ROOT, "packages", "neuro-book-manager", "dist", "neuro-book.mjs");
-    const manager = await installManagerExecutable(stage, MANAGER_VERSION, managerExecutable);
+    const manager = await installManagerExecutable(stage, MANAGER_VERSION, publicManager.executable);
     await writeRuntimeWrapper(stage, runtime);
     await writeManagedToolWrappers(stage, {rg, git});
     await writeManagerWrapper(stage, manager, runtime);
@@ -110,6 +112,7 @@ async function packagePortable(output: string, sourceArchive: string, productArc
     const hash = await sha256(output);
     await mkdir(dirname(output), {recursive: true});
     await writeFile(resolve(dirname(output), "SHA256SUMS.windows"), `${hash}  ${basename(output)}\n`, "utf8");
+    await rm(managerPackageStage, {recursive: true, force: true});
     console.log(`Windows Portable: ${relative(ROOT, output)}`);
 }
 

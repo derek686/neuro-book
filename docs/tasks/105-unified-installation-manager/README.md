@@ -1,6 +1,6 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中，发布进行中。Manager `0.1.0-canary.19`与应用[`v0.8.6-canary.20260717.130406Z.a91a96f`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.6-canary.20260717.130406Z.a91a96f)仍是最新公开版本。`.20`发布workflow在npm publish前被Linux跨平台测试夹具阻断，未形成公开npm版本；修复后改发`.21`。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；公开多架构资产、Canary A数据复用与Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
+> 当前状态：实现中，应用发布进行中。Manager `0.1.0-canary.21`已公开；应用[`v0.8.6-canary.20260717.130406Z.a91a96f`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.6-canary.20260717.130406Z.a91a96f)仍是最新公开版本。`.20`发布workflow在npm publish前被Linux跨平台测试夹具阻断，不是可安装版本。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；公开多架构资产、Canary A数据复用与Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
 
 ## 2026-07-19：Operation Journal v3与资产ownership收口
 
@@ -849,3 +849,6 @@ uninstall
 - 生产Host Platform与Operation路径校验按设计拒绝错误宿主；失败来自测试夹具把可运行Product固定为`windows-x64`，并把Journal根固定为`C:/neuro-book`。这些夹具在Windows本地全绿，却在Linux runner被正确识别为跨平台Product和非POSIX绝对路径。
 - 修复不放宽任何生产校验：需要运行实例的测试Manifest改用`currentProductPlatform()`，Journal/backup/SQLite/Compose/wrapper/migration路径改用当前操作系统的`tmpdir()`与`path.join()`。Release Product URL继续从平台资产映射生成。
 - Windows Manager全量仍为28个文件通过、1个按平台跳过，141项通过、2项跳过。下一公开Manager版本改为`.21`；应用`0.8.7`的最低Manager版本同步提升为`.21`。
+- `.21` workflow `29690567507`随后全绿并完成npm Trusted Publisher。registry精确版本、`canary` dist-tag和全新Bun cache的真实bunx均返回`.21`；历史`latest`继续保持`.4`。
+- 应用发布预检继续发现本地Windows `Bun.build()`与npm中Linux Trusted Publisher bundle字节不同。差异来自依赖物理路径、平台条件与符号排序，不是源码漂移；要求不同宿主重新构建出相同bundle会让合法发布永久阻断。
+- Release现把npm tarball作为Manager可执行bundle唯一发布来源：Portable直接安装公开`neuro-book.mjs`，assemble逐字节比较Portable与npm；公开schema再次解析候选Release Manifest。预检使用npm registry `gitHead`并比较Manager源码、build脚本、共享`server/runtime`、根依赖声明和`bun.lock`，有任何构建输入漂移都要求先发布新Manager。

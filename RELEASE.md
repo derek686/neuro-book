@@ -9,11 +9,12 @@
 - Windows Portable登录不再受启动cwd影响。App SQLite的逻辑URL、Prisma连接URL、Manager备份路径和Docker容器URL统一从State Root解析；配置文件继续保存可移动的相对URL。
 - Manager更新事务升级为Operation Journal v3 Effect Ledger。SQLite checkpoint、Git、Product、Compose、wrapper、Manifest和受管资产都在物理动作前记录planned intent，完成后记录applied结果。
 - Bun、ripgrep和PortableGit使用不可变资产代次。下载、解压、checksum、执行位和真实版本全部在staging验证；失败不会删除当前Runtime或wrapper。
+- Windows Portable直接嵌入npm Trusted Publisher公开的精确Manager bundle，不再在Windows重新构建并假设Bun bundle可跨操作系统字节复现。Release预检使用npm `gitHead`确认当前Manager源码、共享Runtime和lockfile没有漂移。
 - wrapper旧状态与恢复路径会在切换前持久化，备份通过临时目录原子提交。进程在备份或写wrapper期间中断时，不再误删当前可用wrapper。
 - Source Docker镜像使用Operation唯一代次。回滚只删除本次事务创建的镜像，成功提交后只退役previous Manifest明确证明的旧镜像。
 - `update --dry-run`和正式update共用同一个Release/Git目标Resolver，并输出将进入的Effect Ledger计划。同版本更新保持零Operation、零backup、零staging。
 - Installation Manifest硬切v4，Release Manifest硬切v3；容器Profile固定记录Docker或Podman engine，原生Product完整覆盖Windows x64、Linux x64/ARM64 glibc和macOS x64/ARM64。
-- Provider Config ID成为不可变连接身份。使用saved凭据时，Provider ID、Model API、Base URL和proxy必须与保存配置完全一致；身份变化返回400且不会发送网络请求。
+- Provider Config ID、Base URL和proxy组成不可隐式迁移的连接身份，身份变化返回400且不会发送网络请求。Provider默认Model API只影响发现和新模型补全，可在原连接上修改并继续使用saved凭据，不会改写已有模型。
 - Agent Session只持久化`providerConfigId + modelId`。失效引用只阻断对应Session，不会回退默认模型或把Pi Provider名称猜成本地Provider ID。
 - read/write/edit/apply_patch与Subject Memory共用Authorized File Operation，统一Project open gate、跨Project地址和symlink/junction containment。Bash仍是受信任完整Shell，只验证当前Project与cwd。
 - Public Tool Call ID在live、durable history、HTTP、SSE、queue、replay和client patch入口统一限制为非空且不超过512 UTF-8 bytes，非法身份fail closed。
@@ -73,13 +74,14 @@ bun scripts/maintenance/migrate-session-model-refs.ts --workspace-root <Workspac
 
 #### Provider配置
 
-- 修改Base URL、proxy、Model API或协议时，请clone为新的Provider Config ID，再显式迁移Global/Project引用。
+- 修改Base URL或proxy时，请clone为新的Provider Config ID，再显式迁移Global/Project引用。Provider默认Model API可直接修改；已有模型的最终API仍需在各自模型设置中调整。
 - `saved`只使用身份完全匹配的已保存Secret；`provided`只使用请求Secret；`cleared`强制空Secret。
 - 删除Provider前必须先处理Global和所有managed Project引用。系统不会自动清空引用或改用默认模型。
 
 ### 验证与已知边界
 
 - Manager全量：28个文件通过、1个按平台跳过；141项通过、2项跳过。Manager typecheck和5文件约0.38 MiB pack审计通过。
+- Manager `0.1.0-canary.21`已由npm Trusted Publisher公开，workflow `29690567507`全绿；npm精确版本和全新Bun cache中的`bunx --bun ...@0.1.0-canary.21 --version`均返回`.21`。`.20`发布在npm publish前被Linux测试夹具阻断，不是可安装版本。
 - Provider、Session、公开事件、文件授权、Attachment和HTTP组合：20个文件、190项通过；Harness黑盒/State Root/Payload 30项与Trace/File Change 20项通过。
 - 根typecheck、Nuxt client/SSR/Nitro、Product runtime后处理和`git diff --check`通过。
 - Linux ARM64 glibc、macOS x64与macOS ARM64原生Product平台门禁已有集成证据；本次发布仍需由公开Release workflow生成并验证最终资产。
