@@ -1,6 +1,6 @@
 # Release Notes
 
-## 0.8.7-canary - 2026-07-19
+## 0.8.8-canary - 2026-07-19
 
 本次patch收口`0.8.6`之后发现的Portable数据库、Manager更新事务、Provider身份、Agent文件授权与公开事件安全问题。该版本需要`@notnotype/neuro-book-manager@0.1.0-canary.21`或更高版本。
 
@@ -82,6 +82,7 @@ bun scripts/maintenance/migrate-session-model-refs.ts --workspace-root <Workspac
 
 - Manager全量：28个文件通过、1个按平台跳过；141项通过、2项跳过。Manager typecheck和5文件约0.38 MiB pack审计通过。
 - Manager `0.1.0-canary.21`已由npm Trusted Publisher公开，workflow `29690567507`全绿；npm精确版本和全新Bun cache中的`bunx --bun ...@0.1.0-canary.21 --version`均返回`.21`。`.20`发布在npm publish前被Linux测试夹具阻断，不是可安装版本。
+- `0.8.7` prerelease只创建了审计Release，workflow `29690944232`在任何资产构建前失败。原因是`actions/checkout`的单提交浅克隆没有npm `gitHead`对象；预检现显式按SHA取回该提交后再比较构建输入。修复版本改为`0.8.8`。
 - Provider、Session、公开事件、文件授权、Attachment和HTTP组合：20个文件、190项通过；Harness黑盒/State Root/Payload 30项与Trace/File Change 20项通过。
 - 根typecheck、Nuxt client/SSR/Nitro、Product runtime后处理和`git diff --check`通过。
 - Linux ARM64 glibc、macOS x64与macOS ARM64原生Product平台门禁已有集成证据；本次发布仍需由公开Release workflow生成并验证最终资产。

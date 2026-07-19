@@ -13,14 +13,14 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), "neuro-book-public-manager-")
 
 try {
     const publicPackage = await materializePublicManagerPackage(packageJson.version, temporaryRoot);
-    await run("git", ["cat-file", "-e", `${publicPackage.gitHead}^{commit}`], {cwd: ROOT});
+    // actions/checkout默认是单提交浅克隆；显式取回npm provenance指向的提交后才能比较构建输入。
+    await run("git", ["fetch", "--no-tags", "--depth=1", "origin", publicPackage.gitHead], {cwd: ROOT});
     const changedInputs = (await runCapture("git", [
         "diff",
         "--name-only",
         publicPackage.gitHead,
         "--",
         "bun.lock",
-        "package.json",
         "packages/neuro-book-manager/package.json",
         "packages/neuro-book-manager/scripts/build.mjs",
         "packages/neuro-book-manager/src",

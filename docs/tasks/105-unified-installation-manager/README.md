@@ -1,6 +1,6 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中，应用发布进行中。Manager `0.1.0-canary.21`已公开；应用[`v0.8.6-canary.20260717.130406Z.a91a96f`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.6-canary.20260717.130406Z.a91a96f)仍是最新公开版本。`.20`发布workflow在npm publish前被Linux跨平台测试夹具阻断，不是可安装版本。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；公开多架构资产、Canary A数据复用与Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
+> 当前状态：实现中，应用发布进行中。Manager `0.1.0-canary.21`已公开；应用[`v0.8.6-canary.20260717.130406Z.a91a96f`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.6-canary.20260717.130406Z.a91a96f)仍是最新含资产版本。`.20`未进入npm；`0.8.7`在任何资产构建前失败并保留零资产审计Release，Canary A改发`0.8.8`。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；公开多架构资产、Canary A数据复用与Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
 
 ## 2026-07-19：Operation Journal v3与资产ownership收口
 
@@ -851,4 +851,6 @@ uninstall
 - Windows Manager全量仍为28个文件通过、1个按平台跳过，141项通过、2项跳过。下一公开Manager版本改为`.21`；应用`0.8.7`的最低Manager版本同步提升为`.21`。
 - `.21` workflow `29690567507`随后全绿并完成npm Trusted Publisher。registry精确版本、`canary` dist-tag和全新Bun cache的真实bunx均返回`.21`；历史`latest`继续保持`.4`。
 - 应用发布预检继续发现本地Windows `Bun.build()`与npm中Linux Trusted Publisher bundle字节不同。差异来自依赖物理路径、平台条件与符号排序，不是源码漂移；要求不同宿主重新构建出相同bundle会让合法发布永久阻断。
-- Release现把npm tarball作为Manager可执行bundle唯一发布来源：Portable直接安装公开`neuro-book.mjs`，assemble逐字节比较Portable与npm；公开schema再次解析候选Release Manifest。预检使用npm registry `gitHead`并比较Manager源码、build脚本、共享`server/runtime`、根依赖声明和`bun.lock`，有任何构建输入漂移都要求先发布新Manager。
+- Release现把npm tarball作为Manager可执行bundle唯一发布来源：Portable直接安装公开`neuro-book.mjs`，assemble逐字节比较Portable与npm；公开schema再次解析候选Release Manifest。预检使用npm registry `gitHead`并比较Manager源码、Manager package/build脚本、共享`server/runtime`和`bun.lock`，有任何构建输入漂移都要求先发布新Manager；应用自身版本号变化不会伪装成Manager漂移。
+- 应用`v0.8.7-canary.20260719.142942Z.9081e659` workflow `29690944232`在`verify-manager`立即失败，没有构建或上传资产。GitHub Actions默认checkout只有当前Release提交，npm provenance的`d42ab2fa...`不在浅克隆对象库中；生产校验本身没有失败。
+- 预检现先执行按SHA、depth=1的只读fetch，再比较Manager构建输入。失败的`0.8.7`继续保留为审计记录，不复用tag；下一patch `0.8.8`承担Canary A。
