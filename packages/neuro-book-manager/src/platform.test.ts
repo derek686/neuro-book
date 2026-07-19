@@ -1,9 +1,16 @@
 import {describe, expect, it} from "vitest";
 
-import {PRODUCT_ASSET_NAMES, productPlatform, supportedProfiles} from "#manager/platform";
+import {
+    assertInstallationHostCompatible,
+    assertManagerPlatform,
+    PRODUCT_ASSET_NAMES,
+    inspectHostPlatform,
+    productPlatform,
+    supportedProfiles,
+} from "#manager/platform";
 import {BUN_ASSET_NAMES} from "#manager/runtime";
 import {RIPGREP_ASSET_SUFFIXES} from "#manager/tools";
-import {PRODUCT_PLATFORMS} from "#manager/types";
+import {PRODUCT_PLATFORMS, type HostPlatform, type InstallationManifest} from "#manager/types";
 
 describe("Manager平台矩阵", () => {
     it.each([
@@ -17,8 +24,57 @@ describe("Manager平台矩阵", () => {
     });
 
     it("明确拒绝Windows ARM64和Linux musl", () => {
-        expect(() => productPlatform({platform: "win32", arch: "arm64"})).toThrow("Windows只支持x64");
+        expect(() => productPlatform({platform: "win32", arch: "arm64"})).toThrow("Windows只支持原生x64");
         expect(() => productPlatform({platform: "linux", arch: "arm64"})).toThrow("glibc");
+    });
+
+    it("分别记录宿主原生架构与Manager进程架构", () => {
+        const host = inspectHostPlatform({
+            platform: "darwin",
+            nativeMachine: "arm64",
+            processArch: "x64",
+        });
+        expect(host).toEqual({
+            os: "macos",
+            nativeArch: "arm64",
+            processArch: "x64",
+            productPlatform: "darwin-aarch64",
+            libc: null,
+        });
+        expect(() => assertManagerPlatform(host)).toThrow("原生架构的Bun");
+    });
+
+    it("拒绝非原生进程和不匹配的原生Product", () => {
+        const host: HostPlatform = {
+            os: "linux",
+            nativeArch: "arm64",
+            processArch: "arm64",
+            productPlatform: "linux-aarch64-glibc",
+            libc: "glibc",
+        };
+        const manifest = {
+            profile: "product-bun",
+            components: {
+                product: {provider: "release", platform: "linux-x64-glibc"},
+            },
+        } as InstallationManifest;
+        expect(() => assertInstallationHostCompatible(manifest, host)).toThrow("重新安装");
+        expect(() => assertManagerPlatform({...host, processArch: "x64"})).toThrow("宿主为arm64");
+    });
+
+    it("容器Product由Container Engine选择平台", () => {
+        const host: HostPlatform = {
+            os: "linux",
+            nativeArch: "arm64",
+            processArch: "arm64",
+            productPlatform: "linux-aarch64-glibc",
+            libc: "glibc",
+        };
+        const manifest = {
+            profile: "ghcr",
+            components: {product: {provider: "container"}},
+        } as InstallationManifest;
+        expect(() => assertInstallationHostCompatible(manifest, host)).not.toThrow();
     });
 
     it("POSIX平台支持除Windows Portable外的全部Profile", () => {

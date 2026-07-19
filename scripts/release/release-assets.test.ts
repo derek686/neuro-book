@@ -21,6 +21,7 @@ type WorkflowStep = {
 
 type WorkflowJob = {
     needs?: string | string[];
+    "runs-on"?: string;
     steps: WorkflowStep[];
 };
 
@@ -92,20 +93,38 @@ describe("Product Release宿主合同", () => {
         )).toBe(true);
     });
 
-    it("GHCR同时构建linux amd64与arm64且最终索引最后发布", async () => {
+    it("GHCR同时构建并验收linux amd64、arm64与rootless Podman", async () => {
         const workflow = parse(await readFile(resolve(ROOT, ".github/workflows/release-container.yml"), "utf8")) as ReleaseWorkflow & {
             jobs: ReleaseWorkflow["jobs"] & {
                 "publish-index": WorkflowJob;
-                "verify-public-ghcr-installation": WorkflowJob;
-                "verify-public-windows-update": WorkflowJob;
+                "verify-public-ghcr-amd64": WorkflowJob;
+                "verify-public-ghcr-arm64": WorkflowJob;
+                "verify-public-ghcr-podman": WorkflowJob;
+                "verify-public-windows-data-reuse": WorkflowJob;
             };
         };
         const buildSteps = workflow.jobs["build-and-push"].steps.filter(({uses}) => uses === "docker/build-push-action@v6");
         expect(buildSteps).toHaveLength(2);
         for (const step of buildSteps) expect(step.with?.platforms).toBe("linux/amd64,linux/arm64");
+        expect(workflow.jobs["verify-public-ghcr-arm64"]["runs-on"]).toBe("ubuntu-24.04-arm");
+        expect(workflow.jobs["verify-public-ghcr-podman"].steps.some(({run}) => run?.includes("podman-compose"))).toBe(true);
+        expect(workflow.jobs["verify-public-ghcr-podman"].steps.some(({run}) => run?.includes("verify-public-ghcr.sh") && run.includes("podman"))).toBe(true);
         expect(workflow.jobs["publish-index"].needs).toEqual([
-            "verify-public-ghcr-installation",
-            "verify-public-windows-update",
+            "verify-public-ghcr-amd64",
+            "verify-public-ghcr-arm64",
+            "verify-public-ghcr-podman",
+            "verify-public-windows-data-reuse",
         ]);
+    });
+
+    it("Manifest v4首次发布只复用0.8.6完整data目录", async () => {
+        const workflow = parse(await readFile(resolve(ROOT, ".github/workflows/release-container.yml"), "utf8")) as ReleaseWorkflow & {
+            jobs: ReleaseWorkflow["jobs"] & {"verify-public-windows-data-reuse": WorkflowJob};
+        };
+        const run = workflow.jobs["verify-public-windows-data-reuse"].steps.map((step) => step.run ?? "").join("\n");
+        expect(run).toContain("$oldManager --root $baselineRoot admin create");
+        expect(run).toContain("Copy-Item -LiteralPath (Join-Path $baselineRoot \"data\")");
+        expect(run).toContain("$candidateManifest.schemaVersion -ne 4");
+        expect(run).not.toContain("--root $root update --channel");
     });
 });

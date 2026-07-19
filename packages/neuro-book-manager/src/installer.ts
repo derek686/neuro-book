@@ -18,9 +18,10 @@ import {ensureDirectory, pathExists, removePath} from "#manager/files";
 import {assertCleanWorktree, createStagedWorktree, materializeRepository, removeStagedWorktree, repositoryRevision} from "#manager/git";
 import {assertNativeProductStopped, backupApplicationDatabase, verifyNativeProduct} from "#manager/health";
 import {withInstallLock} from "#manager/lock";
+import {assertInstallPreflight, inspectInstallPreflight, type InstallPreflightResult} from "#manager/install-preflight";
 import {readInstallationManifest, resolveReleaseManifest, writeInstallationManifest} from "#manager/manifest-store";
 import {backupRuntimeWrappers, commitOperation, createOperation, recoverInterruptedOperations, updateOperation} from "#manager/operation";
-import {assertManagerPlatform, assertProfileSupported, currentProductPlatform} from "#manager/platform";
+import {assertProfileSupported, currentProductPlatform} from "#manager/platform";
 import {installationPaths} from "#manager/paths";
 import {writePortableLaunchers} from "#manager/portable-launchers";
 import {buildSourceProduct, installSourceDependencies} from "#manager/product";
@@ -38,6 +39,7 @@ import type {
     OperationJournal,
     OperationPlan,
     ReleaseChannel,
+    ReleaseManifest,
     SourceComponent,
     SystemToolComponent,
     ToolComponents,
@@ -77,7 +79,15 @@ export function installPlan(options: InstallOptions): OperationPlan {
 
 /** 执行 Fresh Install；失败只回滚本次创建的 Manager-owned 路径。 */
 export async function install(options: InstallOptions): Promise<InstallationManifest> {
-    return installInternal(options, "fresh");
+    const preflight = await inspectInstallPreflight(options);
+    return installWithPreflight(options, preflight);
+}
+
+/** 使用同一次Clack/CLI预检结果执行Fresh Install。 */
+export async function installWithPreflight(options: InstallOptions, preflight: InstallPreflightResult): Promise<InstallationManifest> {
+    assertMatchingPreflight(options, preflight);
+    assertInstallPreflight(preflight);
+    return installInternal(options, "fresh", preflight);
 }
 
 /** 接管已验证Git checkout；Source准备始终先在detached worktree完成。 */
@@ -85,16 +95,18 @@ export async function installSourceAdoption(options: AdoptSourceOptions): Promis
     return installInternal(options, "adopt");
 }
 
-async function installInternal(options: InstallOptions, mode: "fresh" | "adopt"): Promise<InstallationManifest> {
+async function installInternal(options: InstallOptions, mode: "fresh" | "adopt", preflight?: InstallPreflightResult): Promise<InstallationManifest> {
     if (options.dryRun) throw new Error("dry-run 应通过 installPlan 输出，不应调用 install。" );
-    assertManagerPlatform();
     assertProfileSupported(options.profile);
     const definition = profileDefinition(options.profile);
-    const containerEngine = definition.docker ? await resolveContainerEngine() : null;
+    const containerEngine = definition.docker
+        ? mode === "fresh" ? preflight?.report.containerEngine ?? null : await resolveContainerEngine()
+        : null;
+    if (definition.docker && !containerEngine) throw new Error(`${options.profile}预检没有选择可用的Container Engine。`);
     const portable = options.profile === "windows-portable";
     const paths = installationPaths(options.root, portable);
+    if (mode === "adopt") await preflightAdoptionRoot(paths.root, options.profile);
     await ensureDirectory(paths.root);
-    await preflightInstallRoot(paths.root, options.profile, mode);
     await ensureDirectory(paths.deploy);
     return withInstallLock(join(paths.deploy, "install.lock"), async () => {
         await recoverInterruptedOperations(paths.root);
@@ -116,6 +128,7 @@ async function installInternal(options: InstallOptions, mode: "fresh" | "adopt")
         });
         await ensureDirectory(staging);
         const createdComponents: string[] = [];
+        const retiredComponents: string[] = [];
         let stagedWorktree: string | null = null;
         try {
             if (mode === "adopt" && (options.profile === "source-product" || options.profile === "source-docker")) {
@@ -128,7 +141,7 @@ async function installInternal(options: InstallOptions, mode: "fresh" | "adopt")
                     checkpoint: database.checkpoint,
                 }});
             }
-            const result = await prepareInstallation(options, journal, staging, backup, createdComponents, mode);
+            const result = await prepareInstallation(options, journal, staging, backup, createdComponents, retiredComponents, mode, preflight?.release ?? null);
             stagedWorktree = result.stagedWorktree;
             journal = result.journal;
             const wrapperBackup = await backupRuntimeWrappers(paths.root, backup);
@@ -157,7 +170,9 @@ async function prepareInstallation(
     staging: string,
     backup: string,
     createdComponents: string[],
+    retiredComponents: string[],
     mode: "fresh" | "adopt",
+    preflightRelease: ReleaseManifest | null,
 ): Promise<{manifest: InstallationManifest; journal: OperationJournal; stagedWorktree: string | null}> {
     const portable = options.profile === "windows-portable";
     const paths = installationPaths(options.root, portable);
@@ -168,9 +183,14 @@ async function prepareInstallation(
             createdPaths: [...new Set([...journal.createdPaths, path])],
         });
     };
-    const managerRuntime = await resolveManagerRuntime(paths.root, portable, createdComponents, recordCreated);
+    const recordRetired = async (path: string): Promise<void> => {
+        journal = await updateOperation(journal, journal.phase, {
+            retiredPaths: [...new Set([...(journal.retiredPaths ?? []), path])],
+        });
+    };
+    const managerRuntime = await resolveManagerRuntime(paths.root, portable, createdComponents, recordCreated, retiredComponents, recordRetired);
     const manager = await installManagerExecutable(paths.root, MANAGER_VERSION, options.managerExecutable, createdComponents, recordCreated);
-    const preparedTools = await prepareTools(paths.root, options.profile, createdComponents, journal);
+    const preparedTools = await prepareTools(paths.root, options.profile, createdComponents, retiredComponents, journal);
     const tools = preparedTools.tools;
     journal = preparedTools.journal;
     activateManagedTools(paths.root, tools);
@@ -180,9 +200,11 @@ async function prepareInstallation(
     let stagedSource: StagedReleaseSource | null = null;
     let stagedProduct: StagedProduct | null = null;
     let stagedWorktree: string | null = null;
-    const release = definition.source === "release" || definition.source === "container"
-        ? await resolveReleaseManifest(options.channel, options.version, options.releaseManifest)
-        : null;
+    const release = mode === "fresh"
+        ? preflightRelease
+        : definition.source === "release" || definition.source === "container"
+            ? await resolveReleaseManifest(options.channel, options.version, options.releaseManifest)
+            : null;
     if (!release && (options.version || options.releaseManifest)) {
         throw new Error(`Profile ${options.profile}使用Git Source，不接受--version或--release-manifest。`);
     }
@@ -279,6 +301,7 @@ async function prepareInstallation(
     }
     journal = await updateOperation(journal, "staged", {
         createdPaths: [...new Set([...journal.createdPaths, ...createdComponents])],
+        retiredPaths: [...new Set([...(journal.retiredPaths ?? []), ...retiredComponents])],
     });
     const components: InstallationComponents = {source, product, manager, managerRuntime, applicationRuntime, tools};
     const now = new Date().toISOString();
@@ -366,30 +389,46 @@ async function prepareInstallation(
     return {manifest, journal, stagedWorktree};
 }
 
-async function preflightInstallRoot(root: string, profile: InstallProfile, mode: "fresh" | "adopt"): Promise<void> {
+/** Source Adoption专用目标身份门禁；Fresh Install由Install Preflight Module负责。 */
+async function preflightAdoptionRoot(root: string, profile: InstallProfile): Promise<void> {
     const entries = await readdir(root);
-    if (entries.length === 0) return;
     if (entries.includes(".git")) {
-        if (mode !== "adopt") throw new Error("目录是已有Git checkout；请使用neuro-book adopt显式接管。" );
         if (!profile.startsWith("source-")) throw new Error("已有Git checkout只支持Source Profile接管。" );
         return;
     }
-    const allowed = new Set([".deploy", ".runtime"]);
-    if (profile === "windows-portable") allowed.add("data");
-    const unknown = entries.filter((entry) => !allowed.has(entry));
-    if (unknown.length > 0) throw new Error(`Installation Root 包含未知文件：${unknown.join(", ")}`);
+    throw new Error("Source Adoption目标不是Git checkout。" );
+}
+
+/** 防止调用方把其他选择生成的预检报告用于当前安装。 */
+function assertMatchingPreflight(options: InstallOptions, preflight: InstallPreflightResult): void {
+    const report = preflight.report;
+    if (report.targetRoot !== resolve(options.root)
+        || report.profile !== options.profile
+        || report.port !== options.port
+        || (report.release && report.release.channel !== options.channel)) {
+        throw new Error("安装参数与预检报告不一致；拒绝复用过期预检结果。" );
+    }
+    if (options.version && report.release?.version !== options.version.replace(/^v/u, "")) {
+        throw new Error("安装版本与预检Release不一致；拒绝复用过期预检结果。" );
+    }
 }
 
 async function prepareTools(
     root: string,
     profile: InstallProfile,
     createdPaths: string[],
+    retiredPaths: string[],
     initialJournal: OperationJournal,
 ): Promise<{tools: ToolComponents; journal: OperationJournal}> {
     let journal = initialJournal;
     const record = async (path: string): Promise<void> => {
         journal = await updateOperation(journal, journal.phase, {
             createdPaths: [...new Set([...journal.createdPaths, path])],
+        });
+    };
+    const retire = async (path: string): Promise<void> => {
+        journal = await updateOperation(journal, journal.phase, {
+            retiredPaths: [...new Set([...(journal.retiredPaths ?? []), path])],
         });
     };
     if (profile === "ghcr" || profile === "source-docker") {
@@ -401,14 +440,14 @@ async function prepareTools(
         }, journal};
     }
     if (profile === "windows-portable") {
-        const rg = await installManagedTool(root, "rg", createdPaths, record);
-        const git = await installManagedTool(root, "git", createdPaths, record);
+        const rg = await installManagedTool(root, "rg", {createdPaths, recordCreated: record, retiredPaths, recordRetired: retire});
+        const git = await installManagedTool(root, "git", {createdPaths, recordCreated: record, retiredPaths, recordRetired: retire});
         return {tools: {rg, git}, journal};
     }
     if (profile === "source-dev" || profile === "source-product") {
         if (await commandAvailable("git")) return {tools: {git: await systemTool("git")}, journal};
         if (process.platform === "win32") {
-            const git = await installManagedTool(root, "git", createdPaths, record);
+            const git = await installManagedTool(root, "git", {createdPaths, recordCreated: record, retiredPaths, recordRetired: retire});
             return {tools: {git}, journal};
         }
         throw new Error("缺少 Git。Linux 请先通过系统包管理器安装 Git。" );

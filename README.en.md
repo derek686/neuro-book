@@ -111,12 +111,18 @@ With Bun already installed:
 bunx --bun @notnotype/neuro-book-manager@canary
 ```
 
-### Linux: always use NeuroBook Manager
+### Linux / macOS: always use NeuroBook Manager
 
-On Linux x64 glibc without Bun, first ensure `curl`, `unzip`, and `sha256sum` are available, then run:
+On Linux x64/ARM64 glibc or macOS x64/ARM64 without Bun, run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.sh | sh
+```
+
+Linux requires `curl`, `unzip`, and `sha256sum`; macOS uses the system `shasum -a 256`. A non-TTY automation environment must pass explicit arguments:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.sh | sh -s -- --profile ghcr --yes
 ```
 
 With Bun already installed:
@@ -127,14 +133,14 @@ bunx --bun @notnotype/neuro-book-manager@canary
 
 Stage 0 is an auditable network bootstrap: it downloads a pinned Bun build into the user cache, verifies its SHA256, and runs Manager `@canary`. Manager then selects the newest application canary whose release manifest has been fully published; Stage 0 does not pin an application release. `install.ps1`, `install.cmd`, and `install.sh` are also attached to every complete release so they can be checked against `SHA256SUMS` before network execution.
 
-With no arguments, Manager explains the available profiles and asks for the directory, update channel, port, and authentication policy. After installation, `neuro-book manage` opens a multi-instance TUI. The instance index lives at `~/.neuro-book-manager/config.json`; deployment truth remains in each instance's `.deploy/installation.json`. Automation should use `install --profile ghcr --yes`.
+With no arguments, Manager explains the available profiles and asks for the directory, update channel, port, and authentication policy. Before confirmation it runs one shared preflight for native host architecture, Git, Docker/Podman, Compose, the port, target directory, release, and component sources; `--yes` cannot bypass blockers. After installation, `neuro-book manage` opens a multi-instance TUI. The instance index lives at `~/.neuro-book-manager/config.json`; deployment truth remains in each instance's `.deploy/installation.json`. Automation can audit `install --profile ghcr --dry-run --json` before executing with `--yes`.
 
 Use `@canary` during the canary phase. Do not use `bunx run @notnotype/neuro-book-manager`: `bunx run` resolves the package name as a local script or path, so Manager never starts. A GitHub Release is installable only after its final `release-manifest.json` is published; Manager safely skips releases that are still assembling or were cancelled.
 
 | Profile | Best for |
 | --- | --- |
 | `windows-portable` | Most Windows users; download the complete Portable or let Manager own runtimes and tools |
-| `ghcr` | Preferred for Linux servers; a prebuilt image pinned by digest |
+| `ghcr` | Preferred for Linux/macOS containers; a digest-pinned image through Docker or Podman |
 | `product-bun` | No Docker; matching source and a prebuilt Product |
 | `source-dev` | NeuroBook development with Git source, dependencies, and dev server |
 | `source-product` | Build a production Product from Git source in local staging |

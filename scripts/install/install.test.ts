@@ -6,8 +6,12 @@ import {join, resolve} from "node:path";
 import {afterEach, beforeAll, describe, expect, it} from "vitest";
 
 const scriptPath = resolve(import.meta.dirname, "install.sh");
+const windowsScriptPath = resolve(import.meta.dirname, "install.ps1");
+const windowsCmdPath = resolve(import.meta.dirname, "install.cmd");
 const roots: string[] = [];
 let script = "";
+let windowsScript = "";
+let windowsCmd = "";
 
 const PLATFORM_CASES = [
     {os: "Linux", arch: "x86_64", asset: "bun-linux-x64", archiveSha256: "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f", executableSha256: "9fd36f87e4b90b07632b987a2e4ec81ca15a62c81bf983190cea6d715be2ad74", checksum: "sha256sum"},
@@ -17,7 +21,11 @@ const PLATFORM_CASES = [
 ] as const;
 
 beforeAll(async () => {
-    script = await readFile(scriptPath, "utf8");
+    [script, windowsScript, windowsCmd] = await Promise.all([
+        readFile(scriptPath, "utf8"),
+        readFile(windowsScriptPath, "utf8"),
+        readFile(windowsCmdPath, "utf8"),
+    ]);
 });
 
 afterEach(async () => {
@@ -35,6 +43,29 @@ describe("POSIX Stage 0固定资产", () => {
         expect(script).toContain('[ "$HOST_OS" = "Linux" ] && ! getconf GNU_LIBC_VERSION');
         expect(script).toContain("shasum -a 256");
         expect(script).toContain("sha256sum");
+    });
+
+    it("无参数时只允许通过/dev/tty进入交互向导", () => {
+        expect(script).toContain('( : </dev/tty ) 2>/dev/null');
+        expect(script).toContain('install </dev/tty');
+        expect(script).toContain("--profile ghcr --yes");
+    });
+});
+
+describe("Windows Stage 0合同", () => {
+    it("使用原生OS架构并在首次解压后再次校验executable", () => {
+        expect(windowsScript).toContain("RuntimeInformation]::OSArchitecture");
+        expect(windowsScript).toContain("Architecture]::X64");
+        expect(windowsScript.match(/Get-FileHash -LiteralPath \$bunExe/gu)?.length).toBe(2);
+        expect(windowsScript.match(/& \$bunExe --version/gu)?.length).toBe(2);
+        expect(windowsScript).toContain("Remove-Item -LiteralPath $cacheRoot -Recurse -Force");
+        expect(windowsCmd).toContain("exit /b %ERRORLEVEL%");
+    });
+
+    it.runIf(process.platform === "win32")("PowerShell脚本语法有效", async () => {
+        const command = `$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile('${windowsScriptPath.replaceAll("'", "''")}', [ref]$null, [ref]$errors) | Out-Null; if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 }`;
+        const result = await spawnCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], process.env);
+        expect(result.code).toBe(0);
     });
 });
 
@@ -58,6 +89,14 @@ describePosix("POSIX Stage 0行为", () => {
         const run = await runStage0(PLATFORM_CASES[1], {glibc: false});
         expect(run.code).toBe(1);
         expect(run.stderr).toContain("只支持 Linux glibc");
+        expect(run.url).toBe("");
+    });
+
+    it("无TTY且没有显式参数时在下载前拒绝", async () => {
+        const run = await runStage0(PLATFORM_CASES[0], {args: []});
+        expect(run.code).toBe(1);
+        expect(run.stderr).toContain("无法打开交互终端");
+        expect(run.stderr).toContain("--profile ghcr --yes");
         expect(run.url).toBe("");
     });
 
@@ -227,7 +266,7 @@ async function runStage0(platformCase: PlatformCase, options: RunOptions = {}) {
         STUB_URL_CAPTURE: urlCapture,
         STUB_CHECKSUM_LOG: checksumLog,
         STUB_CHECKSUM_COUNTER: checksumCounter,
-    }, options.args);
+    }, options.args ?? ["--profile", "product-bun", "--yes"]);
 
     return {
         ...result,
@@ -247,8 +286,12 @@ async function writeExecutable(path: string, content: string): Promise<void> {
 }
 
 async function spawnScript(env: NodeJS.ProcessEnv, args: string[] = []): Promise<{code: number; stdout: string; stderr: string}> {
+    return spawnCommand("/bin/sh", [scriptPath, ...args], env);
+}
+
+async function spawnCommand(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<{code: number; stdout: string; stderr: string}> {
     return new Promise((resolvePromise, rejectPromise) => {
-        const child = spawn("/bin/sh", [scriptPath, ...args], {env, stdio: ["ignore", "pipe", "pipe"]});
+        const child = spawn(command, args, {env, stdio: ["ignore", "pipe", "pipe"]});
         let stdout = "";
         let stderr = "";
         child.stdout.setEncoding("utf8");

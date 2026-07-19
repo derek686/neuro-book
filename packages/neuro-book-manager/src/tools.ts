@@ -1,14 +1,24 @@
-import {dirname, join, relative, resolve} from "node:path";
-import {chmod as chmodFile, rename} from "node:fs/promises";
+import {dirname, join, resolve} from "node:path";
+import {chmod as chmodFile} from "node:fs/promises";
 
-import {downloadVerified, extractArchive, githubReleaseAsset} from "#manager/download";
-import {ensureDirectory, removePath, sha256File, writeTextAtomic} from "#manager/files";
-import {run} from "#manager/process";
+import {extractArchive, githubReleaseAsset} from "#manager/download";
+import {ensureDirectory, writeTextAtomic} from "#manager/files";
+import {run, runCapture} from "#manager/process";
+import {managedAssetRoot, materializeManagedAsset, type TrustedManagedAssetIdentity} from "#manager/managed-asset-repository";
 import {currentProductPlatform} from "#manager/platform";
 import {findNamedFile, prependExecutablePath} from "#manager/runtime";
 import type {ManagedGitToolComponent, ManagedToolComponent, ProductPlatform, ToolComponents} from "#manager/types";
 
 export type ManagedToolName = "rg" | "git";
+
+export type ManagedToolInstallOptions = {
+    createdPaths?: string[];
+    recordCreated?: (path: string) => Promise<void>;
+    retiredPaths?: string[];
+    recordRetired?: (path: string) => Promise<void>;
+    /** 仅允许传入当前有效Installation Manifest中的managed Tool。 */
+    trustedIdentity?: ManagedToolComponent | ManagedGitToolComponent;
+};
 
 /** 当前Manager支持的平台到ripgrep官方Release资产后缀。 */
 export const RIPGREP_ASSET_SUFFIXES = {
@@ -20,51 +30,51 @@ export const RIPGREP_ASSET_SUFFIXES = {
 } as const satisfies Record<ProductPlatform, string>;
 
 /** 安装 Manager 支持的托管工具。 */
-export async function installManagedTool(root: string, tool: "rg", createdPaths?: string[], recordCreated?: (path: string) => Promise<void>): Promise<ManagedToolComponent>;
-export async function installManagedTool(root: string, tool: "git", createdPaths?: string[], recordCreated?: (path: string) => Promise<void>): Promise<ManagedGitToolComponent>;
-export async function installManagedTool(root: string, tool: ManagedToolName, createdPaths: string[] = [], recordCreated?: (path: string) => Promise<void>): Promise<ManagedToolComponent | ManagedGitToolComponent> {
+export async function installManagedTool(root: string, tool: "rg", options?: ManagedToolInstallOptions): Promise<ManagedToolComponent>;
+export async function installManagedTool(root: string, tool: "git", options?: ManagedToolInstallOptions): Promise<ManagedGitToolComponent>;
+export async function installManagedTool(root: string, tool: ManagedToolName, options: ManagedToolInstallOptions = {}): Promise<ManagedToolComponent | ManagedGitToolComponent> {
     currentProductPlatform();
-    return tool === "git" ? installPortableGit(root, createdPaths, recordCreated) : installRipgrep(root, createdPaths, recordCreated);
+    return tool === "git" ? installPortableGit(root, options) : installRipgrep(root, options);
 }
 
-/** 安装最新 ripgrep，部分版本目录会自动重建。 */
-async function installRipgrep(root: string, createdPaths: string[], recordCreated?: (path: string) => Promise<void>): Promise<ManagedToolComponent> {
+/** 安装最新 ripgrep；无Manifest身份证明时整版本重建。 */
+async function installRipgrep(root: string, options: ManagedToolInstallOptions): Promise<ManagedToolComponent> {
     const suffix = RIPGREP_ASSET_SUFFIXES[currentProductPlatform()];
     const release = await githubReleaseAsset("BurntSushi/ripgrep", undefined, (name) => name.endsWith(suffix));
     const version = release.tag.replace(/^v/u, "");
     const targetRoot = join(root, ".runtime", "tools", "rg", version);
-    let executable = await findNamedFile(targetRoot, process.platform === "win32" ? "rg.exe" : "rg").catch(() => null);
-    if (!executable) {
-        await removePath(targetRoot);
-        const stageRoot = join(root, ".deploy", "staging", `rg-${version}`);
-        const archivePath = join(stageRoot, release.asset.name);
-        const extractedRoot = join(stageRoot, "extracted");
-        await removePath(stageRoot);
-        await downloadVerified(release.asset.url, archivePath, release.asset.sha256);
-        await extractArchive(archivePath, extractedRoot);
-        executable = await findNamedFile(extractedRoot, process.platform === "win32" ? "rg.exe" : "rg");
-        await ensureDirectory(dirname(targetRoot));
-        await rename(extractedRoot, targetRoot);
-        executable = join(targetRoot, relative(extractedRoot, executable));
-        await removePath(stageRoot);
-        const createdPath = relative(root, targetRoot).replaceAll("\\", "/");
-        createdPaths.push(createdPath);
-        await recordCreated?.(createdPath);
-    }
+    const trusted = trustedRipgrepIdentity(options.trustedIdentity);
+    const materialized = await materializeManagedAsset({
+        installationRoot: root,
+        targetRoot,
+        release: release.asset,
+        ...(trusted ? {trustedIdentity: trusted} : {}),
+        executables: [{
+            key: "rg" as const,
+            locate: (assetRoot) => findNamedFile(assetRoot, process.platform === "win32" ? "rg.exe" : "rg"),
+            verify: (executable) => verifyRipgrep(executable, version),
+        }],
+        extract: extractArchive,
+        createdPaths: options.createdPaths,
+        recordCreated: options.recordCreated,
+        retiredPaths: options.retiredPaths,
+        recordRetired: options.recordRetired,
+    });
+    const executable = materialized.executables.rg;
     return {
         provider: "managed",
         version,
-        path: relative(root, executable).replaceAll("\\", "/"),
-        archiveSha256: release.asset.sha256,
-        executableSha256: await sha256File(executable),
-        sourceUrl: release.asset.url,
+        path: executable.path,
+        archiveSha256: materialized.archiveSha256,
+        executableSha256: executable.sha256,
+        sourceUrl: materialized.sourceUrl,
         license: "MIT OR Unlicense",
         redistribution: "按 ripgrep 官方 Release 原样再分发，并保留上游许可证文件。",
     };
 }
 
 /** Windows 安装 PortableGit，确保 Git 与真正 bash 同属一个受审计发行包。 */
-async function installPortableGit(root: string, createdPaths: string[], recordCreated?: (path: string) => Promise<void>): Promise<ManagedGitToolComponent> {
+async function installPortableGit(root: string, options: ManagedToolInstallOptions): Promise<ManagedGitToolComponent> {
     if (process.platform !== "win32") throw new Error("PortableGit managed provider 只支持 Windows x64。" );
     const release = await githubReleaseAsset(
         "git-for-windows/git",
@@ -73,41 +83,83 @@ async function installPortableGit(root: string, createdPaths: string[], recordCr
     );
     const version = release.tag.replace(/^v/u, "");
     const targetRoot = join(root, ".runtime", "tools", "git", version);
-    let git = await findNamedFile(targetRoot, "git.exe").catch(() => null);
-    let bash = await findNamedFile(targetRoot, "bash.exe").catch(() => null);
-    if (!git || !bash) {
-        await removePath(targetRoot);
-        const stageRoot = join(root, ".deploy", "staging", `portable-git-${version}`);
-        const archivePath = join(stageRoot, release.asset.name);
-        const extractedRoot = join(stageRoot, "extracted");
-        await removePath(stageRoot);
-        await ensureDirectory(stageRoot);
-        await downloadVerified(release.asset.url, archivePath, release.asset.sha256);
-        await ensureDirectory(extractedRoot);
-        await run(archivePath, ["-y", `-o${extractedRoot}`]);
-        git = await findNamedFile(extractedRoot, "git.exe");
-        bash = await findNamedFile(extractedRoot, "bash.exe");
-        await ensureDirectory(dirname(targetRoot));
-        await rename(extractedRoot, targetRoot);
-        git = join(targetRoot, relative(extractedRoot, git));
-        bash = join(targetRoot, relative(extractedRoot, bash));
-        await removePath(stageRoot);
-        const createdPath = relative(root, targetRoot).replaceAll("\\", "/");
-        createdPaths.push(createdPath);
-        await recordCreated?.(createdPath);
-    }
+    const trusted = trustedPortableGitIdentity(options.trustedIdentity);
+    const materialized = await materializeManagedAsset({
+        installationRoot: root,
+        targetRoot,
+        release: release.asset,
+        ...(trusted ? {trustedIdentity: trusted} : {}),
+        executables: [
+            {key: "git" as const, locate: (assetRoot) => findNamedFile(assetRoot, "git.exe"), verify: (executable) => verifyGit(executable, version)},
+            {key: "bash" as const, locate: (assetRoot) => findNamedFile(assetRoot, "bash.exe"), verify: verifyBash},
+        ],
+        extract: async (archivePath, extractedRoot) => {
+            await ensureDirectory(extractedRoot);
+            await run(archivePath, ["-y", `-o${extractedRoot}`]);
+        },
+        createdPaths: options.createdPaths,
+        recordCreated: options.recordCreated,
+        retiredPaths: options.retiredPaths,
+        recordRetired: options.recordRetired,
+    });
+    const git = materialized.executables.git;
+    const bash = materialized.executables.bash;
     return {
         provider: "managed",
         distribution: "PortableGit",
         version,
-        path: relative(root, git).replaceAll("\\", "/"),
-        bashPath: relative(root, bash).replaceAll("\\", "/"),
-        archiveSha256: release.asset.sha256,
-        gitSha256: await sha256File(git),
-        bashSha256: await sha256File(bash),
-        sourceUrl: release.asset.url,
+        path: git.path,
+        bashPath: bash.path,
+        archiveSha256: materialized.archiveSha256,
+        gitSha256: git.sha256,
+        bashSha256: bash.sha256,
+        sourceUrl: materialized.sourceUrl,
         license: "GPL-2.0-only",
         redistribution: "按 Git for Windows PortableGit 官方 Release 原样再分发；第三方组件许可证以包内文件为准。",
+    };
+}
+
+/** 校验ripgrep执行位与精确版本。 */
+async function verifyRipgrep(executable: string, expectedVersion: string): Promise<void> {
+    if (process.platform !== "win32") await chmodFile(executable, 0o755);
+    const output = (await runCapture(executable, ["--version"])).trim();
+    if (!output.split(/\s+/u).includes(expectedVersion)) throw new Error(`ripgrep版本不匹配：期望${expectedVersion}，实际${output || "<missing>"}。`);
+}
+
+/** 校验PortableGit中的Git版本与执行位。 */
+async function verifyGit(executable: string, expectedVersion: string): Promise<void> {
+    const output = (await runCapture(executable, ["--version"])).trim();
+    if (!output.includes(expectedVersion)) throw new Error(`PortableGit版本不匹配：期望${expectedVersion}，实际${output || "<missing>"}。`);
+}
+
+/** 校验PortableGit中的Bash可执行。 */
+async function verifyBash(executable: string): Promise<void> {
+    const output = (await runCapture(executable, ["--version"])).trim();
+    if (!/^GNU bash(?:,| )/u.test(output)) throw new Error(`PortableGit Bash版本无法验证：${output || "<missing>"}。`);
+}
+
+/** 将Manifest中的ripgrep身份转换为Managed Asset Repository身份。 */
+function trustedRipgrepIdentity(tool: ManagedToolComponent | ManagedGitToolComponent | undefined): TrustedManagedAssetIdentity<"rg"> | undefined {
+    if (!tool || "distribution" in tool) return undefined;
+    return {
+        assetRoot: managedAssetRoot(tool.path, ".runtime/tools/rg"),
+        archiveSha256: tool.archiveSha256,
+        sourceUrl: tool.sourceUrl,
+        executables: {rg: {path: tool.path, sha256: tool.executableSha256}},
+    };
+}
+
+/** 将Manifest中的PortableGit身份转换为Managed Asset Repository身份。 */
+function trustedPortableGitIdentity(tool: ManagedToolComponent | ManagedGitToolComponent | undefined): TrustedManagedAssetIdentity<"git" | "bash"> | undefined {
+    if (!tool || !("distribution" in tool)) return undefined;
+    return {
+        assetRoot: managedAssetRoot(tool.path, ".runtime/tools/git"),
+        archiveSha256: tool.archiveSha256,
+        sourceUrl: tool.sourceUrl,
+        executables: {
+            git: {path: tool.path, sha256: tool.gitSha256},
+            bash: {path: tool.bashPath, sha256: tool.bashSha256},
+        },
     };
 }
 

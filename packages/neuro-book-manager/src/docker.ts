@@ -7,8 +7,8 @@ import {parse, stringify} from "yaml";
 import {resolveStateDatabaseUrl} from "#manager/config";
 import {writeTextAtomic} from "#manager/files";
 import {statePort} from "#manager/health";
-import {commandAvailable, run, runCapture} from "#manager/process";
-import type {ContainerEngine, InstallProfile} from "#manager/types";
+import {run, runCapture} from "#manager/process";
+import type {CommandInspection, ContainerEngine, InstallProfile} from "#manager/types";
 import {resolveAppSqliteLocation} from "nbook/server/runtime/app-sqlite-location";
 
 const ComposeSchema = Type.Object({
@@ -34,27 +34,55 @@ export type DockerApplicationInspection = {
     health?: string;
 };
 
+/** 一次Container Engine探测的CLI、Compose与daemon证据。 */
+export type ContainerEngineInspection = {
+    engine: ContainerEngine;
+    command: CommandInspection;
+    compose: CommandInspection;
+    daemonAvailable: boolean;
+    /** 任一必需能力不可用时给出完整原因。 */
+    error?: string;
+};
+
+/** 新安装可用的Container Engine及全部候选探测结果。 */
+export type ContainerEngineSelection = {
+    engine: ContainerEngine | null;
+    inspections: ContainerEngineInspection[];
+    /** 配置非法或全部候选失败时存在。 */
+    error?: string;
+};
+
 /**
  * 为新安装选择并验证Container Engine。
  *
  * 已安装实例不得调用此函数重新选择，必须使用Manifest或Journal中的固定值。
  */
 export async function resolveContainerEngine(preferred?: ContainerEngine): Promise<ContainerEngine> {
-    const configured = preferred ?? configuredContainerEngine();
-    if (configured) {
-        await validateContainerEngine(configured);
-        return configured;
+    const selection = await inspectContainerEngines(preferred);
+    if (selection.engine) return selection.engine;
+    throw new Error(selection.error ?? "未检测到可用的 Docker 或 Podman。");
+}
+
+/** 一次探测并选择新安装使用的Container Engine；不修改任何容器状态。 */
+export async function inspectContainerEngines(preferred?: ContainerEngine): Promise<ContainerEngineSelection> {
+    let configured: ContainerEngine | undefined;
+    try {
+        configured = preferred ?? configuredContainerEngine();
+    } catch (error) {
+        return {engine: null, inspections: [], error: error instanceof Error ? error.message : String(error)};
     }
-    const failures: string[] = [];
-    for (const candidate of ["docker", "podman"] as const) {
-        try {
-            await validateContainerEngine(candidate);
-            return candidate;
-        } catch (error) {
-            failures.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
-        }
+    const candidates = configured ? [configured] : ["docker", "podman"] as const;
+    const inspections: ContainerEngineInspection[] = [];
+    for (const candidate of candidates) {
+        const inspection = await inspectContainerEngine(candidate);
+        inspections.push(inspection);
+        if (!inspection.error) return {engine: candidate, inspections};
     }
-    throw new Error(`未检测到可用的 Docker 或 Podman。\n${failures.join("\n")}`);
+    return {
+        engine: null,
+        inspections,
+        error: `未检测到可用的 Docker 或 Podman。\n${inspections.map((item) => `${item.engine}: ${item.error}`).join("\n")}`,
+    };
 }
 
 /** 生成完整 Docker Compose，不依赖仓库根旧模板。 */
@@ -254,17 +282,44 @@ function configuredContainerEngine(): ContainerEngine | undefined {
     return value;
 }
 
-/** 验证CLI、Compose子命令和Engine daemon/machine均可用。 */
-async function validateContainerEngine(engine: ContainerEngine): Promise<void> {
-    if (!await commandAvailable(engine)) throw new Error(`系统中未找到${engine}命令。`);
+/** 验证CLI、Compose子命令和Engine daemon/machine并保留一次探测结果。 */
+async function inspectContainerEngine(engine: ContainerEngine): Promise<ContainerEngineInspection> {
+    let command: CommandInspection;
     try {
-        await runCapture(engine, ["compose", "version"]);
+        const version = (await runCapture(engine, ["--version"])).split(/\r?\n/u)[0]?.trim();
+        command = {available: true, ...(version ? {version} : {})};
     } catch (error) {
-        throw new Error(`${engine} compose不可用：${error instanceof Error ? error.message : String(error)}`);
+        return {
+            engine,
+            command: {available: false},
+            compose: {available: false},
+            daemonAvailable: false,
+            error: `系统中未找到${engine}命令：${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+    let compose: CommandInspection;
+    try {
+        const version = (await runCapture(engine, ["compose", "version"])).split(/\r?\n/u)[0]?.trim();
+        compose = {available: true, ...(version ? {version} : {})};
+    } catch (error) {
+        return {
+            engine,
+            command,
+            compose: {available: false},
+            daemonAvailable: false,
+            error: `${engine} compose不可用：${error instanceof Error ? error.message : String(error)}`,
+        };
     }
     try {
         await runCapture(engine, ["info"]);
+        return {engine, command, compose, daemonAvailable: true};
     } catch (error) {
-        throw new Error(`${engine} daemon或machine不可用：${error instanceof Error ? error.message : String(error)}`);
+        return {
+            engine,
+            command,
+            compose,
+            daemonAvailable: false,
+            error: `${engine} daemon或machine不可用：${error instanceof Error ? error.message : String(error)}`,
+        };
     }
 }

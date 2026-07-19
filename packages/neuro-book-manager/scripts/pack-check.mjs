@@ -47,19 +47,22 @@ try {
         join(temporaryRoot, "node_modules", "@notnotype", "neuro-book-manager", "dist", "neuro-book.mjs"),
         "install",
         "--profile",
-        "ghcr",
+        "source-dev",
         "--dir",
         join(temporaryRoot, "dry-run-instance"),
         "--version",
         "0.8.2-canary.cli-route",
         "--yes",
         "--dry-run",
+        "--json",
     ], temporaryRoot, {
         ...process.env,
         NEURO_BOOK_MANAGER_CONFIG: join(temporaryRoot, "manager-home", "config.json"),
     });
-    const installPlan = JSON.parse(installPlanOutput);
-    if (installPlan.action !== "install" || installPlan.profile !== "ghcr") {
+    const installDryRun = JSON.parse(installPlanOutput);
+    if (installDryRun.plan?.action !== "install"
+        || installDryRun.plan?.profile !== "source-dev"
+        || !installDryRun.preflight?.blockers?.some((blocker) => blocker.code === "release.unsupported")) {
         throw new Error("install --version被顶层Manager版本选项截获。" );
     }
 } finally {

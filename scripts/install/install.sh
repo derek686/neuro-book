@@ -1,6 +1,16 @@
 #!/bin/sh
 set -eu
 
+INTERACTIVE=false
+if [ "$#" -eq 0 ]; then
+    if ( : </dev/tty ) 2>/dev/null; then
+        INTERACTIVE=true
+    else
+        echo "NeuroBook Stage 0 无法打开交互终端。自动化安装请显式传参，例如：curl .../install.sh | sh -s -- --profile ghcr --yes" >&2
+        exit 1
+    fi
+fi
+
 HOST_OS="$(uname -s)"
 case "$HOST_OS:$(uname -m)" in
     Linux:x86_64|Linux:amd64) BUN_ASSET="bun-linux-x64" ;;
@@ -111,4 +121,7 @@ export NEURO_BOOK_STAGE0_BUN_VERSION="$BUN_VERSION"
 export NEURO_BOOK_STAGE0_BUN_SOURCE_URL="$ASSET_URL"
 export NEURO_BOOK_STAGE0_BUN_ARCHIVE_SHA256="$ARCHIVE_SHA256"
 export NEURO_BOOK_STAGE0_BUN_SHA256="$BUN_SHA256"
+if [ "$INTERACTIVE" = true ]; then
+    exec "$BUN_BIN" x --bun "@notnotype/neuro-book-manager@$MANAGER_TAG" install </dev/tty
+fi
 exec "$BUN_BIN" x --bun "@notnotype/neuro-book-manager@$MANAGER_TAG" install "$@"

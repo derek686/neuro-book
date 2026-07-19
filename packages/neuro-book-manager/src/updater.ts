@@ -24,7 +24,7 @@ import {
 import {withInstallLock} from "#manager/lock";
 import {resolveReleaseManifest, writeInstallationManifest} from "#manager/manifest-store";
 import {backupRuntimeWrappers, commitOperation, createOperation, recoverInterruptedOperations, updateOperation} from "#manager/operation";
-import {currentProductPlatform} from "#manager/platform";
+import {assertInstallationHostCompatible, currentProductPlatform} from "#manager/platform";
 import {installationPaths} from "#manager/paths";
 import {buildSourceProduct, installSourceDependencies} from "#manager/product";
 import {assertManagerUpgrade, installManagerExecutable, runtimeExecutable, writeManagerWrapper, writeRuntimeWrapper} from "#manager/runtime";
@@ -70,6 +70,7 @@ type UpdatePreflight = ProfileUpdatePlan & {
 
 /** 使用统一 journal 更新应用组件，Git commit point 永远位于健康检查之后。 */
 export async function updateInstallation(options: UpdateOptions): Promise<UpdateResult> {
+    assertInstallationHostCompatible(options.manifest);
     const paths = installationPaths(options.root, options.manifest.profile === "windows-portable");
     return withInstallLock(join(paths.deploy, "install.lock"), async () => {
         await recoverInterruptedOperations(paths.root);

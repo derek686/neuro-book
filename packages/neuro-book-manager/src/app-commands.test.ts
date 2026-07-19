@@ -135,8 +135,23 @@ describe("容器管理员命令", () => {
             "compose",
             "--env-file", join(root, ".env"),
             "-f", join(root, ".deploy", "docker-compose.generated.yml"),
-            "exec", "app", "bun", ".output/server/scripts/cli/create-admin.ts", "admin",
+            "exec", "-T", "app", "bun", ".output/server/scripts/cli/create-admin.ts", "admin",
         ], {cwd: root});
+    });
+
+    it("非交互容器管理员创建显式传递环境密码", async () => {
+        const root = await mkdtemp(join(tmpdir(), "manager-container-admin-password-"));
+        roots.push(root);
+        process.env.AUTH_ADMIN_PASSWORD = "test-password";
+        try {
+            await createAdmin(root, dockerManifest(), "admin");
+        } finally {
+            delete process.env.AUTH_ADMIN_PASSWORD;
+        }
+
+        expect(processCommands.run).toHaveBeenCalledWith("docker", expect.arrayContaining([
+            "exec", "-T", "-e", "AUTH_ADMIN_PASSWORD=test-password", "app",
+        ]), {cwd: root});
     });
 });
 

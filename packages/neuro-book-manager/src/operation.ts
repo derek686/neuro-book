@@ -31,7 +31,8 @@ export async function updateOperation(journal: OperationJournal, phase: Operatio
 
 /** 标记操作成功提交。 */
 export async function commitOperation(journal: OperationJournal): Promise<OperationJournal> {
-    return updateOperation(journal, "committed", {outcome: "success"});
+    const committed = await updateOperation(journal, "committed", {outcome: "success"});
+    return cleanupRetiredPaths(committed);
 }
 
 /** 在 mutating command 开始前恢复上次未完成操作。 */
@@ -49,7 +50,10 @@ export async function recoverInterruptedOperations(root: string): Promise<void> 
         }
         const journal = parseOperationJournal(value, path);
         if (journal.root !== resolve(root)) throw new Error(`Operation journal 的 Installation Root 不匹配：${path}`);
-        if (journal.phase === "committed") continue;
+        if (journal.phase === "committed") {
+            if (journal.outcome === "success") await cleanupRetiredPaths(journal);
+            continue;
+        }
         if (journal.git) {
             const head = await repositoryRevision(root);
             if (head !== journal.git.previousRevision && head !== journal.git.targetRevision) {
@@ -78,6 +82,25 @@ export async function recoverInterruptedOperations(root: string): Promise<void> 
         }
         await rollbackOperation(journal);
     }
+}
+
+/** 清理成功事务已退役的资产代次；重复执行必须安全。 */
+async function cleanupRetiredPaths(journal: OperationJournal): Promise<OperationJournal> {
+    const failed: string[] = [];
+    const messages: string[] = [];
+    for (const path of journal.retiredPaths ?? []) {
+        try {
+            await removePath(safeTarget(journal.root, path));
+        } catch (error) {
+            failed.push(path);
+            messages.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+    if (failed.length === 0 && !journal.retiredCleanupError && (journal.retiredPaths?.length ?? 0) === 0) return journal;
+    return updateOperation(journal, "committed", {
+        retiredPaths: failed,
+        retiredCleanupError: messages.length ? messages.join("\n") : undefined,
+    });
 }
 
 /** 按 journal 恢复当前操作；不会 reset Git。 */

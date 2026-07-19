@@ -10,6 +10,7 @@ import {ensureStateFiles} from "#manager/config";
 import {withInstallLock} from "#manager/lock";
 import {commitOperation, createOperation, recoverInterruptedOperations, updateOperation} from "#manager/operation";
 import {installationPaths} from "#manager/paths";
+import {assertInstallationHostCompatible} from "#manager/platform";
 import type {InstallationManifest, OperationJournal} from "#manager/types";
 
 /**
@@ -59,6 +60,7 @@ export async function startInstallationApplication(
     root: string,
     manifest: InstallationManifest,
 ): Promise<void> {
+    assertInstallationHostCompatible(manifest);
     const paths = installationPaths(root, manifest.profile === "windows-portable");
     const stateRoot = resolve(paths.root, manifest.stateRoot);
     await ensureStateFiles(stateRoot, 3000, manifest.profile !== "windows-portable");

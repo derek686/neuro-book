@@ -112,12 +112,18 @@ irm https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/instal
 bunx --bun @notnotype/neuro-book-manager@canary
 ```
 
-### Linux：统一使用 NeuroBook Manager
+### Linux / macOS：统一使用 NeuroBook Manager
 
-Linux x64 glibc 用户没有安装 Bun 时，先确认系统具有 `curl`、`unzip` 和 `sha256sum`，然后运行：
+Linux x64/ARM64 glibc或macOS x64/ARM64用户没有安装 Bun 时运行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.sh | sh
+```
+
+Linux需要`curl`、`unzip`和`sha256sum`；macOS使用系统`shasum -a 256`。自动化环境没有TTY时必须显式传参：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/notnotype/neuro-book/master/scripts/install/install.sh | sh -s -- --profile ghcr --yes
 ```
 
 已经安装 Bun：
@@ -128,14 +134,14 @@ bunx --bun @notnotype/neuro-book-manager@canary
 
 Stage 0是可审计的联网引导脚本：它只把固定版本 Bun下载到用户缓存并校验SHA256，然后运行Manager `@canary`。Manager默认选择最新一个已经完整发布Manifest的应用canary，而不是把Stage 0绑定到某个应用版本。`install.ps1`、`install.cmd`和`install.sh`也随完整Release发布，可配合`SHA256SUMS`审计后再联网执行。
 
-Manager不传参数会说明部署方式并引导选择目录、更新通道、端口和鉴权。安装后运行`neuro-book manage`可在TUI中管理多个实例；实例索引保存在`~/.neuro-book-manager/config.json`，真实部署状态仍位于各实例的`.deploy/installation.json`。自动化部署使用`install --profile ghcr --yes`。
+Manager不传参数会说明部署方式并引导选择目录、更新通道、端口和鉴权。最终确认前会统一检查原生宿主架构、Git、Docker/Podman、Compose、端口、目标目录、Release和组件来源；`--yes`不能绕过blocker。安装后运行`neuro-book manage`可在TUI中管理多个实例；实例索引保存在`~/.neuro-book-manager/config.json`，真实部署状态仍位于各实例的`.deploy/installation.json`。自动化可先运行`install --profile ghcr --dry-run --json`审计，再使用`--yes`执行。
 
 Canary阶段固定使用`@canary`。不要写成`bunx run @notnotype/neuro-book-manager`：`bunx run`会把包名按本地脚本或路径解析，Manager不会启动。只有GitHub Release出现正式`release-manifest.json`后才可安装；仍在构建或已取消的Release会被Manager安全跳过。
 
 | Profile | 适合场景 |
 | --- | --- |
 | `windows-portable` | Windows普通用户；下载完整Portable或由Manager托管Runtime和工具 |
-| `ghcr` | Linux服务器首选；使用Docker运行固定digest的预构建镜像 |
+| `ghcr` | Linux/macOS容器部署首选；使用Docker或Podman运行固定digest镜像 |
 | `product-bun` | 不使用Docker；下载同revision源码和预构建Product |
 | `source-dev` | NeuroBook开发；Git源码、依赖和dev server |
 | `source-product` | 从Git源码在本机staging构建生产Product |

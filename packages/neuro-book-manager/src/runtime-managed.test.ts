@@ -50,18 +50,21 @@ describePosix("POSIX Managed Bun", () => {
             asset: {name: archiveName, url: "https://example.com/bun.zip", sha256: "a".repeat(64), bytes: downloadMocks.archive.byteLength},
         });
 
-        const first = await installManagedBun(root, "1.2.3");
+        const first = await installManagedBun(root, {requestedVersion: "1.2.3"});
         const executable = join(root, first.path);
         expect((await stat(executable)).mode & 0o111).not.toBe(0);
 
         await writeFile(executable, "#!/bin/sh\nprintf '9.9.9\\n'\n", "utf8");
         await chmod(executable, 0o644);
         downloadMocks.downloadVerified.mockClear();
-        const repaired = await installManagedBun(root, "1.2.3");
+        const retiredPaths: string[] = [];
+        const repaired = await installManagedBun(root, {requestedVersion: "1.2.3", trustedIdentity: first, retiredPaths});
 
-        expect(repaired.path).toBe(first.path);
+        expect(repaired.path).not.toBe(first.path);
         expect(await readFile(join(root, repaired.path), "utf8")).toContain("1.2.3");
         expect((await stat(join(root, repaired.path))).mode & 0o111).not.toBe(0);
+        expect(await readFile(executable, "utf8")).toContain("9.9.9");
+        expect(retiredPaths).toEqual([".runtime/bun/1.2.3"]);
         expect(downloadMocks.downloadVerified).toHaveBeenCalledOnce();
     });
 
@@ -76,7 +79,7 @@ describePosix("POSIX Managed Bun", () => {
             asset: {name: archiveName, url: "https://example.com/bun.zip", sha256: "a".repeat(64), bytes: downloadMocks.archive.byteLength},
         });
 
-        await expect(installManagedBun(root, "1.2.3")).rejects.toThrow("Managed Bun版本不匹配");
+        await expect(installManagedBun(root, {requestedVersion: "1.2.3"})).rejects.toThrow("Managed Bun版本不匹配");
         await expect(stat(join(root, ".runtime", "bun", "1.2.3"))).rejects.toMatchObject({code: "ENOENT"});
     });
 });

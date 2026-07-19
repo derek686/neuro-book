@@ -9,6 +9,7 @@ import {pathExists, sha256File} from "#manager/files";
 import {assertCleanWorktree, repositoryRevision, validateRepository} from "#manager/git";
 import {statePort} from "#manager/health";
 import {installationPaths} from "#manager/paths";
+import {assertInstallationHostCompatible} from "#manager/platform";
 import {runCapture} from "#manager/process";
 import {renderManagerWrapper, renderRuntimeWrapper} from "#manager/runtime";
 import {parseInstallationManifest} from "#manager/schema";
@@ -47,6 +48,14 @@ export async function inspectInstallationIntegrity(root: string, manifest: Insta
     } catch (error) {
         fail(checks, "manifest.schema", "manifest", errorMessage(error), "重新安装该实例；Manager不迁移旧Installation Manifest。" );
     }
+    let hostCompatible = true;
+    try {
+        assertInstallationHostCompatible(manifest);
+        pass(checks, "manifest.host", "manifest", "实例Profile与Product平台兼容当前原生宿主");
+    } catch (error) {
+        hostCompatible = false;
+        fail(checks, "manifest.host", "manifest", errorMessage(error), "在当前平台重新安装，并复用原State Root。" );
+    }
 
     if (manifest.managerVersion === manifest.components.manager.version) {
         pass(checks, "manager.version", "manager", `Manager版本为${manifest.managerVersion}`);
@@ -54,12 +63,14 @@ export async function inspectInstallationIntegrity(root: string, manifest: Insta
         fail(checks, "manager.version", "manager", `Manifest Manager版本${manifest.managerVersion}与组件版本${manifest.components.manager.version}不一致`, "重新运行Manager更新。" );
     }
     await checkChecksum(checks, "manager.bundle", "manager", resolve(absoluteRoot, manifest.components.manager.path), manifest.components.manager.bundleSha256);
-    await checkRuntime(checks, absoluteRoot, "runtime.manager", manifest.components.managerRuntime);
-    if (manifest.components.applicationRuntime.provider !== "container") {
-        await checkRuntime(checks, absoluteRoot, "runtime.application", manifest.components.applicationRuntime);
+    if (hostCompatible) {
+        await checkRuntime(checks, absoluteRoot, "runtime.manager", manifest.components.managerRuntime);
+        if (manifest.components.applicationRuntime.provider !== "container") {
+            await checkRuntime(checks, absoluteRoot, "runtime.application", manifest.components.applicationRuntime);
+        }
+        await checkWrappers(checks, absoluteRoot, manifest);
+        await checkTools(checks, absoluteRoot, manifest);
     }
-    await checkWrappers(checks, absoluteRoot, manifest);
-    await checkTools(checks, absoluteRoot, manifest);
     await checkSource(checks, absoluteRoot, manifest);
     await checkProduct(checks, absoluteRoot, manifest);
     await checkState(checks, absoluteRoot, stateRoot, manifest.stateRoot);

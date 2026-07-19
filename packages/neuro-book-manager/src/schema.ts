@@ -170,6 +170,8 @@ export const OperationJournalSchema = Type.Object({
     root: Type.String({minLength: 1}),
     containerEngine: Type.Union([ContainerEngineSchema, Type.Null()]),
     createdPaths: Type.Array(RelativePathSchema),
+    retiredPaths: Type.Optional(Type.Array(RelativePathSchema)),
+    retiredCleanupError: Type.Optional(Type.String({minLength: 1})),
     backupRoot: Type.String({minLength: 1}),
     previousManifest: Type.Union([InstallationManifestSchema, Type.Null()]),
     nextManifest: Type.Union([InstallationManifestSchema, Type.Null()]),
@@ -284,8 +286,18 @@ export function parseOperationJournal(value: unknown, path: string): OperationJo
     assertSchema(OperationJournalSchema, value, `Operation journal 不符合 schema：${path}`);
     const journal = value as OperationJournal;
     for (const createdPath of journal.createdPaths) assertSafeRelativePath(createdPath);
+    for (const retiredPath of journal.retiredPaths ?? []) assertSafeRelativePath(retiredPath);
     if (journal.previousManifest) parseInstallationManifest(journal.previousManifest);
     if (journal.nextManifest) parseInstallationManifest(journal.nextManifest);
+    if (journal.nextManifest) {
+        const referencedPaths = componentPaths(journal.nextManifest);
+        for (const retiredPath of journal.retiredPaths ?? []) {
+            const normalized = retiredPath.replaceAll("\\", "/").replace(/\/$/u, "");
+            if (referencedPaths.some((componentPath) => componentPath === normalized || componentPath.startsWith(`${normalized}/`))) {
+                throw new Error(`Operation retiredPaths仍包含nextManifest引用的组件目录：${retiredPath}`);
+            }
+        }
+    }
     if (journal.attachmentMigration && !journal.nextManifest) {
         throw new Error(`Attachment migration Operation journal缺少nextManifest：${path}`);
     }
@@ -397,7 +409,12 @@ function profileContract(profile: InstallationManifest["profile"]): {source: str
 }
 
 function assertComponentPaths(manifest: InstallationManifest): void {
-    const paths = [
+    for (const path of componentPaths(manifest)) assertSafeRelativePath(path);
+}
+
+/** 返回Manifest直接引用的Installation Root相对组件路径。 */
+function componentPaths(manifest: InstallationManifest): string[] {
+    return [
         manifest.components.manager.path,
         manifest.components.managerRuntime.provider === "managed" ? manifest.components.managerRuntime.path : null,
         manifest.components.applicationRuntime.provider === "managed" ? manifest.components.applicationRuntime.path : null,
@@ -405,8 +422,7 @@ function assertComponentPaths(manifest: InstallationManifest): void {
         manifest.components.tools.git?.provider === "managed" ? manifest.components.tools.git.path : null,
         manifest.components.tools.git?.provider === "managed" ? manifest.components.tools.git.bashPath : null,
         ...manifest.components.source.provider === "release" ? manifest.components.source.files : [],
-    ].filter((path): path is string => Boolean(path));
-    for (const path of paths) assertSafeRelativePath(path);
+    ].filter((path): path is string => Boolean(path)).map((path) => path.replaceAll("\\", "/"));
 }
 
 export function assertSafeRelativePath(path: string): void {

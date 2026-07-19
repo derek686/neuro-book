@@ -6,8 +6,9 @@ import * as p from "@clack/prompts";
 import {Command} from "commander";
 
 import {createAdmin} from "#manager/app-commands";
-import {runInstallGuide, recommendedProfile} from "#manager/install-guide";
-import {install, installPlan} from "#manager/installer";
+import {runInstallGuide} from "#manager/install-guide";
+import {inspectInstallEnvironment, inspectInstallPreflight, recommendedInstallProfile} from "#manager/install-preflight";
+import {installPlan, installWithPreflight} from "#manager/installer";
 import {configuredDiscoveryRoots, discoverInstances, inspectInstance} from "#manager/instance-discovery";
 import {importInstallation, inspectImport} from "#manager/instance-import";
 import {
@@ -52,6 +53,7 @@ program.command("install")
     .option("--auth <mode>", "密码保护：enabled 或 disabled。Windows Portable 默认 disabled，其他 Profile 默认 enabled。", parseAuth)
     .option("--yes", "使用默认值，不进入交互。", false)
     .option("--dry-run", "只打印操作计划。", false)
+    .option("--json", "与--dry-run一起输出结构化预检和操作计划。", false)
     .action(async (options: {
         profile?: string;
         dir?: string;
@@ -62,8 +64,10 @@ program.command("install")
         auth?: boolean;
         yes: boolean;
         dryRun: boolean;
+        json: boolean;
     }) => {
         if (options.version && options.releaseManifest) throw new Error("--version 与 --release-manifest 不能同时使用。" );
+        if (options.json && !options.dryRun) throw new Error("--json当前只与--dry-run一起使用。" );
         if (!options.yes && process.stdin.isTTY && process.stdout.isTTY) {
             await runInstallGuide({
                 profile: options.profile ? parseProfile(options.profile) : undefined,
@@ -79,7 +83,9 @@ program.command("install")
             return;
         }
         const managerConfig = await readManagerConfig();
-        const profile = options.profile ? parseProfile(options.profile) : recommendedProfile();
+        let environment = await inspectInstallEnvironment(options.profile ? parseProfile(options.profile) : undefined);
+        const profile = options.profile ? parseProfile(options.profile) : recommendedInstallProfile(environment);
+        environment = await inspectInstallEnvironment(profile, environment);
         const input = {
             root: resolve(options.dir ?? managerConfig.preferences.installDirectory ?? join(homedir(), "neuro-book")),
             profile,
@@ -91,12 +97,15 @@ program.command("install")
             dryRun: options.dryRun,
             managerExecutable,
         };
+        const preflight = await inspectInstallPreflight(input, environment);
         if (input.dryRun) {
-            printJson(installPlan(input));
+            const output = {preflight: preflight.report, plan: installPlan(input)};
+            if (options.json) printJson(output);
+            else printObject(output);
             return;
         }
         p.intro("NeuroBook Manager");
-        const manifest = await install(input);
+        const manifest = await installWithPreflight(input, preflight);
         await registerManagerInstance({
             root: input.root,
             name: basename(input.root) || "NeuroBook",

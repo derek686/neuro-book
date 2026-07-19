@@ -1,9 +1,10 @@
 import {existsSync} from "node:fs";
-import {chmod, copyFile, readdir, rename} from "node:fs/promises";
+import {chmod, copyFile, readdir} from "node:fs/promises";
 import {basename, dirname, join, relative, resolve} from "node:path";
 
-import {downloadVerified, extractArchive, githubReleaseAsset} from "#manager/download";
+import {extractArchive, githubReleaseAsset} from "#manager/download";
 import {ensureDirectory, pathExists, removePath, sha256File, writeTextAtomic} from "#manager/files";
+import {managedAssetRoot, materializeManagedAsset} from "#manager/managed-asset-repository";
 import {currentProductPlatform, executableName} from "#manager/platform";
 import {runCapture} from "#manager/process";
 import type {ManagedRuntimeComponent, ManagerComponent, ManagerRuntimeComponent, ProductPlatform} from "#manager/types";
@@ -36,10 +37,17 @@ export async function assertManagerUpgrade(currentVersion: string, installedVers
 }
 
 /** 解析 Manager Host Runtime；Stage 0 优先复制为 managed，否则使用当前 Bun。 */
-export async function resolveManagerRuntime(root: string, forceManaged = false, createdPaths: string[] = [], recordCreated?: (path: string) => Promise<void>): Promise<ManagerRuntimeComponent> {
+export async function resolveManagerRuntime(
+    root: string,
+    forceManaged = false,
+    createdPaths: string[] = [],
+    recordCreated?: (path: string) => Promise<void>,
+    retiredPaths: string[] = [],
+    recordRetired?: (path: string) => Promise<void>,
+): Promise<ManagerRuntimeComponent> {
     const stage0 = stage0Runtime();
-    if (stage0) return installStage0Bun(root, stage0, createdPaths, recordCreated);
-    if (forceManaged) return installManagedBun(root, undefined, createdPaths, recordCreated);
+    if (stage0) return installStage0Bun(root, stage0, createdPaths, recordCreated, retiredPaths, recordRetired);
+    if (forceManaged) return installManagedBun(root, {createdPaths, recordCreated, retiredPaths, recordRetired});
     return {
         provider: "system",
         version: process.versions.bun ?? "unknown",
@@ -47,51 +55,57 @@ export async function resolveManagerRuntime(root: string, forceManaged = false, 
     };
 }
 
+export type InstallManagedBunOptions = {
+    requestedVersion?: string;
+    /** 仅允许传入当前有效Installation Manifest中的managed Runtime。 */
+    trustedIdentity?: ManagedRuntimeComponent;
+    createdPaths?: string[];
+    recordCreated?: (path: string) => Promise<void>;
+    retiredPaths?: string[];
+    recordRetired?: (path: string) => Promise<void>;
+};
+
 /** 安装托管 Bun Runtime，使用 staging 后原子提交不可变版本目录。 */
-export async function installManagedBun(root: string, requestedVersion?: string, createdPaths: string[] = [], recordCreated?: (path: string) => Promise<void>): Promise<ManagedRuntimeComponent> {
-    const tag = requestedVersion
-        ? requestedVersion.startsWith("bun-v") ? requestedVersion : `bun-v${requestedVersion.replace(/^v/u, "")}`
+export async function installManagedBun(root: string, options: InstallManagedBunOptions = {}): Promise<ManagedRuntimeComponent> {
+    const tag = options.requestedVersion
+        ? options.requestedVersion.startsWith("bun-v") ? options.requestedVersion : `bun-v${options.requestedVersion.replace(/^v/u, "")}`
         : undefined;
     const archiveName = BUN_ASSET_NAMES[currentProductPlatform()];
     const release = await githubReleaseAsset("oven-sh/bun", tag, (name) => name === archiveName);
     const version = release.tag.replace(/^bun-v/u, "");
     const runtimeRoot = join(root, ".runtime", "bun", version);
-    let executable = await findNamedFile(runtimeRoot, executableName("bun")).catch(() => null);
-    if (executable) {
-        try {
-            await verifyManagedBun(executable, version);
-        } catch {
-            await removePath(runtimeRoot);
-            executable = null;
-        }
-    }
-    if (!executable) {
-        const stageRoot = join(root, ".deploy", "staging", `bun-${version}`);
-        const archivePath = join(stageRoot, archiveName);
-        const extractedRoot = join(stageRoot, "extracted");
-        await removePath(stageRoot);
-        try {
-            await downloadVerified(release.asset.url, archivePath, release.asset.sha256);
-            await extractArchive(archivePath, extractedRoot);
-            executable = await findNamedFile(extractedRoot, executableName("bun"));
-            await verifyManagedBun(executable, version);
-            await ensureDirectory(dirname(runtimeRoot));
-            await rename(extractedRoot, runtimeRoot);
-            executable = join(runtimeRoot, relative(extractedRoot, executable));
-            const createdPath = relative(root, runtimeRoot).replaceAll("\\", "/");
-            createdPaths.push(createdPath);
-            await recordCreated?.(createdPath);
-        } finally {
-            await removePath(stageRoot);
-        }
-    }
+    const materialized = await materializeManagedAsset({
+        installationRoot: root,
+        targetRoot: runtimeRoot,
+        release: release.asset,
+        ...(options.trustedIdentity ? {trustedIdentity: {
+            assetRoot: managedAssetRoot(options.trustedIdentity.path, ".runtime/bun"),
+            archiveSha256: options.trustedIdentity.archiveSha256,
+            sourceUrl: options.trustedIdentity.sourceUrl,
+            executables: {bun: {
+                path: options.trustedIdentity.path,
+                sha256: options.trustedIdentity.executableSha256,
+            }},
+        }} : {}),
+        executables: [{
+            key: "bun" as const,
+            locate: (assetRoot) => findNamedFile(assetRoot, executableName("bun")),
+            verify: (executable) => verifyManagedBun(executable, version),
+        }],
+        extract: extractArchive,
+        createdPaths: options.createdPaths,
+        recordCreated: options.recordCreated,
+        retiredPaths: options.retiredPaths,
+        recordRetired: options.recordRetired,
+    });
+    const executable = materialized.executables.bun;
     return {
         provider: "managed",
         version,
-        path: relative(root, executable).replaceAll("\\", "/"),
-        archiveSha256: release.asset.sha256,
-        executableSha256: await sha256File(executable),
-        sourceUrl: release.asset.url,
+        path: executable.path,
+        archiveSha256: materialized.archiveSha256,
+        executableSha256: executable.sha256,
+        sourceUrl: materialized.sourceUrl,
         license: "MIT",
         redistribution: "按 Bun 官方 Release 原样再分发，并保留上游许可证与版本信息。",
     };
@@ -172,31 +186,50 @@ export function prependExecutablePath(executable: string): void {
     if (!current.split(separator).includes(directory)) process.env.PATH = `${directory}${separator}${current}`;
 }
 
-async function installStage0Bun(root: string, stage0: Stage0Runtime, createdPaths: string[] = [], recordCreated?: (path: string) => Promise<void>): Promise<ManagedRuntimeComponent> {
+async function installStage0Bun(
+    root: string,
+    stage0: Stage0Runtime,
+    createdPaths: string[] = [],
+    recordCreated?: (path: string) => Promise<void>,
+    retiredPaths: string[] = [],
+    recordRetired?: (path: string) => Promise<void>,
+): Promise<ManagedRuntimeComponent> {
     const actualChecksum = await sha256File(stage0.path);
     if (actualChecksum.toLowerCase() !== stage0.executableSha256.toLowerCase()) {
         throw new Error(`Stage 0 Bun checksum 不匹配：${stage0.path}`);
     }
     const targetRoot = join(root, ".runtime", "bun", stage0.version);
-    const target = join(targetRoot, basename(stage0.path));
-    if (await pathExists(target)) {
-        const checksum = await sha256File(target);
-        if (checksum.toLowerCase() !== stage0.executableSha256.toLowerCase()) await removePath(targetRoot);
-    }
-    await ensureDirectory(targetRoot);
-    if (!await pathExists(target)) {
-        const createdPath = relative(root, targetRoot).replaceAll("\\", "/");
-        createdPaths.push(createdPath);
-        await recordCreated?.(createdPath);
-        await copyFile(stage0.path, target);
-    }
-    await verifyManagedBun(target, stage0.version);
+    const targetName = executableName("bun");
+    const materialized = await materializeManagedAsset({
+        installationRoot: root,
+        targetRoot,
+        release: {
+            name: basename(stage0.path),
+            url: stage0.sourceUrl,
+            sha256: stage0.archiveSha256,
+        },
+        executables: [{
+            key: "bun" as const,
+            locate: (assetRoot) => findNamedFile(assetRoot, targetName),
+            verify: (executable) => verifyManagedBun(executable, stage0.version),
+        }],
+        fetch: (target) => copyFile(stage0.path, target),
+        extract: async (source, extractedRoot) => {
+            await ensureDirectory(extractedRoot);
+            await copyFile(source, join(extractedRoot, targetName));
+        },
+        createdPaths,
+        recordCreated,
+        retiredPaths,
+        recordRetired,
+    });
+    const executable = materialized.executables.bun;
     return {
         provider: "managed",
         version: stage0.version,
-        path: relative(root, target).replaceAll("\\", "/"),
+        path: executable.path,
         archiveSha256: stage0.archiveSha256,
-        executableSha256: stage0.executableSha256,
+        executableSha256: executable.sha256,
         sourceUrl: stage0.sourceUrl,
         license: "MIT",
         redistribution: "由 NeuroBook Stage 0 校验 Bun 官方 Release 后复制到 Installation Root。",

@@ -637,19 +637,22 @@ uninstall
 - [x] Installation/Release Manifest 严格 schema。
 - [x] Stage 0 用户 cache Bun、Manager Host Runtime 接管与空目录 Git materialize实现及聚焦测试通过。
 - [x] Windows PortableGit/rg/Bun 托管、bash、checksum、wrapper、许可证与再分发记录完成本地组装验证。
+- [x] Host Platform Module统一原生/进程架构、Product平台与Profile门禁；install/import/doctor/start/update/Runtime/Tool不再各自判断平台。
+- [x] Managed Asset Repository统一Bun、Stage 0 Bun、ripgrep与PortableGit的可信复用、staging验证、不可变代次提交和失败清理；Fresh Install不从磁盘现状反向认证资产，同版本损坏资产也不会原地覆盖。
+- [x] Install Preflight统一Clack、`--yes`和`--dry-run --json`的宿主、命令、端口、目标目录、Release与组件来源门禁。
 - [x] Windows/Linux Product artifact 与 Windows Portable 结构。
 - [x] 修复PR #11暴露的Release Manifest消费端AArch64资产名映射，并用穷举类型映射约束五个ProductPlatform。
 - [ ] 提升并先发布包含Linux AArch64、macOS平台门禁与Podman合同的新Manager版本；应用Release引用新的`minManagerVersion`，并由公开Manager精确版本消费候选manifest。
 - [x] Linux POSIX Stage 0支持x64/AArch64 glibc；macOS POSIX Stage 0支持x64/ARM64，并分别使用sha256sum/shasum与独立平台门禁。
-- [ ] 完成Linux AArch64 Product与`linux/arm64` GHCR native runtime门禁，并将公开资产证据记录回本任务。
+- [ ] Linux AArch64原生Product runner已通过；完成`linux/arm64`公开GHCR runtime门禁并将公开资产证据记录回本任务。
 - [ ] 完成macOS Phase 1：Source Dev、Source Docker、GHCR、Docker Desktop与Podman machine真实验收。
-- [ ] 完成macOS x64/ARM64原生Source Product/Product Bun runner验收；源码和Release合同已开放，未通过workflow前不写成公开可用证据。
+- [x] 完成macOS x64/ARM64原生Source Product/Product Bun runner验收；公开npm与Release资产证据仍由发布TODO跟踪。
 - [x] 将Container Engine写入Installation Manifest v4与Operation Journal v2，覆盖自动选择、显式选择、daemon不可用、rootless Podman与恢复固定engine。
 - [x] 用正向宿主平台/Profile矩阵替代负向unsupported列表，锁定POSIX不显示Windows Portable、Windows ARM64/Linux musl不回退x64。
 - [x] 删除旧部署入口并同步当前部署文档。
 - [x] 停止现有服务后重建根 `node_modules`，完成全新 Product build和无根 `node_modules` Product 隔离运行。
 - [ ] 使用本轮新 `.output` 完成 Windows Portable start/create-admin/update/data 保留 smoke。
-- [ ] Linux Product Bun、Source Docker容器内build和既有公开GHCR runtime smoke已在SSH Arch通过；`0.7.9`完整公开资产verify已通过，仍需下一patch完成Product Bun、Manager GHCR无宿主checkout安装和公开A→B数据保留验收。
+- [ ] Linux Product Bun、Source Docker容器内build和既有公开GHCR runtime smoke已在SSH Arch通过；仍需应用A首次Manifest v4公开、应用A→B事务更新和公开数据保留/回滚验收。
 - [ ] 增加下载中断、checksum、manifest mismatch、migration、文件占用和健康检查失败的完整故障注入矩阵。
 - [x] 将Attachment hard cut纳入Operation Journal：dry-run记录受影响session与hash，原生/Docker统一apply，失败或崩溃时先恢复session再回滚Product/SQLite/Compose。
 - [x] 实现统一 installation Operation Journal，覆盖 Product、Release Source、Compose、数据库、created paths 与 Git commit point 恢复。
@@ -798,3 +801,24 @@ uninstall
 - 与原计划差异：Apple Silicon Docker Desktop/rootless Podman双engine实机门禁由用户明确豁免本次合并阻断；该证据继续保留TODO且不能写成已验证。Linux ARM64与macOS原生runner门禁已在集成分支完成，结果见下条记录。
 - 集成分支merge commit `a4ecec1be018adc8df313076564cc3b8b2d95de7`触发的[Product Platform Checks 29643196339](https://github.com/notnotype/neuro-book/actions/runs/29643196339)全绿：Linux ARM64 glibc 3分32秒、macOS ARM64 4分06秒、macOS x64 4分51秒。三个job均通过POSIX Stage 0、Manager平台合同、Nuxt build、Source archive、对应原生Product构建与native Product smoke；Linux ARM64额外通过Chromium smoke。
 - 实际验收边界：本次runner结果关闭了原计划中的原生Linux ARM64/macOS Product合并门禁，但没有执行Apple Silicon上的Docker Desktop或rootless Podman machine，也没有产生公开npm、GHCR、Portable或最终Release索引。因此Task 105继续保持实现中，后续发布与双engine证据不被本次合并结果替代。
+
+### 2026-07-19：发布入口、平台身份与托管资产系统性收口
+
+- 新增Host Platform深Module，唯一Interface输出宿主OS、原生架构、当前Bun进程架构、ProductPlatform与libc。平台Schema继续保持宿主无关；真正运行实例时统一拒绝Windows ARM64、Linux musl、Rosetta和其他原生/进程架构不一致环境。Installation Product平台不匹配时，import/doctor报告`manifest.host` blocker，start/update/Runtime/Tool在加锁或创建Operation前直接失败。
+- Doctor遇到不兼容实例后不会继续执行其managed Runtime或Tool，避免为了收集诊断而启动错误架构二进制；Manager bundle、Source/Product、State Root和Operation等安全的离线检查仍继续返回。
+- 新增Managed Asset Repository深Module，负责受管归档下载、staging、解压、全部executable定位、checksum、执行位/真实版本验证和不可变版本目录原子提交。Bun、Stage 0 Bun、ripgrep与PortableGit只提供资产描述和版本验证Adapter；稳定wrapper仍由事务调用方在全部资产成功后统一刷新。
+- 既有版本目录只有在当前有效Installation Manifest同时证明archive checksum、source URL及全部executable checksum时才可复用。Fresh Install、Portable组装或身份不完整目录会在新代次完成验证后切换；损坏Bun/rg/Git/Bash在事务提交前始终保留，不能读取当前文件checksum再把它写回Manifest完成“自认证”。
+- 新增Install Preflight深Module。Clack、非交互`install --yes`和`install --dry-run --json`共用一次宿主、Git、Docker/Podman、Compose、daemon、端口、Installation Root身份、Release与组件来源检查；执行入口复用同一Release Manifest和Container Engine选择，拒绝过期或参数不匹配的报告。blocker不能被`--yes`绕过，dry-run保持零目录写入。
+- Container Engine选择Interface同步加深：一次探测保留CLI版本、Compose版本与daemon/machine状态，`resolveContainerEngine()`只负责把结构化失败收敛为执行错误。Linux/macOS推荐策略因此能基于真实engine选择GHCR，无engine时推荐Product Bun；Windows保持Portable优先。
+- POSIX Stage 0在任何下载前处理交互合同：无参数且能打开`/dev/tty`时把Manager stdin重新连接TTY进入Clack；无TTY时明确要求`sh -s -- --profile ... --yes`。Windows Stage 0改用原生OSArchitecture拒绝ARM64，缓存与首次解压均执行Bun executable checksum和版本门禁；`install.ps1`明确保存为UTF-8 BOM，保证`install.cmd`调用Windows PowerShell 5时能解析中文脚本，CMD继续透传退出码。
+- Release首次Manifest v4门禁不再执行必然失败的`0.8.6 v3 → candidate v4 update`。新链路用`0.8.6`内嵌旧Manager创建管理员和数据标记，将候选Portable解压到新Installation Root，只替换完整`data/`，随后验证v4 Manifest、migration、登录、session、SQLite和无影子Workspace；旧`.deploy/.runtime/.output/wrapper`不会复制。
+- 公开GHCR门禁拆为Linux x64 Docker、Linux ARM64 Docker与Linux x64 rootless Podman三个job，共用同一用户链脚本，覆盖公开精确npm Manager、候选Manifest、migration、非交互管理员、登录、stop/restart、running/stopped doctor和planned Operation真实恢复。容器`admin create`因此补齐共同支持的`compose exec -T -e AUTH_ADMIN_PASSWORD=...`路径，不再假定宿主环境变量自动进入容器。
+- `publish-index`现在必须同时等待三条GHCR链和Windows完整`data/`复用。Canary A发布完成后需要删除一次性v3复用runner，并将Windows门禁切换为A→B Manifest v4事务更新；本轮尚未执行workflow或发布版本，不能把这些门禁写成公开通过。
+- 最终审查发现初版Repository在可信同版本目录损坏时，会在新下载和验证前删除当前目录，重新引入Task 105早期已记录的事务缺陷。实现现改为不可变资产代次：默认目录被占用时提交到新代次，Operation Journal v2以可选`retiredPaths`记录提交后清理；失败回滚只删除`createdPaths`并保留旧代次。Windows运行文件占用导致的清理失败不会回滚已提交更新，journal会保留失败路径供下一次mutating command幂等重试。
+
+#### 验证与计划差异
+
+- Host/Preflight/Managed Asset/Container Admin聚焦5文件30项通过；Release workflow合同5项、Stage 0 Windows静态/Parser 8项通过，POSIX行为9项在Windows按平台跳过；GHCR与POSIX脚本`bash -n`通过。
+- 最终Manager完整suite为26文件127项通过，另有1文件/2项按平台跳过；新增覆盖损坏旧代次保留、新代次提交、Journal记账失败清理、`retiredPaths`安全校验及提交后恢复清理。Manager pack审计为5个文件、约0.37 MiB；Manager与根typecheck、Nuxt build及Product后处理通过。
+- 与原计划相比，新增修复了两个执行前审查才暴露的真实入口问题：Windows PowerShell 5对UTF-8无BOM中文脚本的解析失败，以及容器管理员非交互密码没有传入容器。两者均通过平台/容器共同Interface解决，没有为CI增加测试专用业务fallback。
+- 尚未完成Manager `.20`、应用A/B、Windows公开Portable、Linux双架构公开GHCR和rootless Podman workflow执行；Apple Silicon Docker Desktop/rootless Podman设备验收仍按用户决策豁免本轮发布阻断，但继续保留未完成状态。

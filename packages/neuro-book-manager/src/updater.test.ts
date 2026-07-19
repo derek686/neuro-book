@@ -8,6 +8,7 @@ import {installationPaths} from "#manager/paths";
 import type {InstallationManifest, ReleaseManifest} from "#manager/types";
 import {updateInstallation} from "#manager/updater";
 import {planGitProfileUpdate, planReleaseProfileUpdate} from "#manager/update-planner";
+import {MANAGER_VERSION} from "#manager/version-info";
 
 const manifestStore = vi.hoisted(() => ({resolve: vi.fn()}));
 vi.mock("#manager/manifest-store", async (importOriginal) => ({
@@ -55,8 +56,8 @@ describe("Release Update预检", () => {
         expect(result.manifest.appVersion).toBe(manifest.appVersion);
         expect(result.manifest.components.source).toEqual(manifest.components.source);
         expect(result.manifest.components.product).toEqual(manifest.components.product);
-        expect(result.manifest.managerVersion).toBe("0.1.0-canary.19");
-        expect((await readInstallationManifest(installationPaths(root).manifest))?.managerVersion).toBe("0.1.0-canary.19");
+        expect(result.manifest.managerVersion).toBe(MANAGER_VERSION);
+        expect((await readInstallationManifest(installationPaths(root).manifest))?.managerVersion).toBe(MANAGER_VERSION);
         await expect(stat(join(root, ".deploy", "backups"))).rejects.toMatchObject({code: "ENOENT"});
     });
 
@@ -133,7 +134,7 @@ function productManifest(overrides: {managerVersion?: string} = {}): Installatio
         schemaVersion: 4,
         profile: "product-bun",
         containerEngine: null,
-        managerVersion: overrides.managerVersion ?? "0.1.0-canary.19",
+        managerVersion: overrides.managerVersion ?? MANAGER_VERSION,
         appVersion: "0.8.6-canary.1",
         channel: "canary",
         sourceRevision: "1".repeat(40),
@@ -161,7 +162,7 @@ function productManifest(overrides: {managerVersion?: string} = {}): Installatio
                 license: "AGPL-3.0-only",
                 redistribution: "test",
             },
-            manager: {provider: "managed", version: overrides.managerVersion ?? "0.1.0-canary.19", path: ".runtime/manager/old/neuro-book.mjs", bundleSha256: MANAGER_SHA},
+            manager: {provider: "managed", version: overrides.managerVersion ?? MANAGER_VERSION, path: ".runtime/manager/old/neuro-book.mjs", bundleSha256: MANAGER_SHA},
             managerRuntime: {provider: "system", version: "1.3.14", executable: process.execPath},
             applicationRuntime: {provider: "system", version: "1.3.14", executable: process.execPath},
             tools: {},
@@ -234,7 +235,7 @@ function releaseManifest(overrides: {version?: string; sourceRevision?: string; 
         version,
         channel: "canary",
         sourceRevision,
-        minManagerVersion: "0.1.0-canary.19",
+        minManagerVersion: MANAGER_VERSION,
         source: {url: "https://example.com/source.zip", sha256: sourceSha, bytes: 1},
         products: [{platform: "windows-x64", sourceRevision, url: "https://example.com/product.zip", sha256: overrides.productSha ?? sourceSha, bytes: 1}],
         windowsPortable: {url: "https://example.com/portable.zip", sha256: sourceSha, bytes: 1},

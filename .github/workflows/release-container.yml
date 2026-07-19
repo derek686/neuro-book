@@ -858,7 +858,7 @@ jobs:
           docker pull "${IMAGE}"
           test "$(docker image inspect "${IMAGE}" --format '{{ index .RepoDigests 0 }}')" = "${APP_IMAGE_NAME}@${{ needs.build-and-push.outputs.app-digest }}"
 
-  verify-public-ghcr-installation:
+  verify-public-ghcr-amd64:
     needs: [verify-public-payload]
     runs-on: ubuntu-latest
     permissions:
@@ -871,49 +871,70 @@ jobs:
         with:
           name: release-candidate
           path: candidate-assets
-      - name: Install public GHCR instance with published Manager
+      - name: Verify public GHCR on Linux x64 Docker
         shell: bash
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          NEURO_BOOK_MANAGER_CONFIG: ${{ runner.temp }}/neuro-book-manager/config.json
         run: |
           set -euo pipefail
-          root="${RUNNER_TEMP}/public-ghcr-install"
           manager_version="$(node -p 'require("./packages/neuro-book-manager/package.json").version')"
           candidate_manifest="$PWD/candidate-assets/release-manifest.json"
-          channel="$(node -p 'require(process.argv[1]).channel' "${candidate_manifest}")"
-          rm -rf "$root" "${RUNNER_TEMP}/neuro-book-manager"
-          mkdir -p "${RUNNER_TEMP}/neuro-book-manager"
-          bunx --bun "@notnotype/neuro-book-manager@${manager_version}" install \
-            --profile ghcr \
-            --channel "${channel}" \
-            --release-manifest "${candidate_manifest}" \
-            --dir "$root" \
-            --port 39487 \
-            --yes
-          bunx --bun "@notnotype/neuro-book-manager@${manager_version}" --root "$root" doctor --json > "${RUNNER_TEMP}/doctor-running.json"
-          node -e 'const r=require(process.argv[1]); if (!r.healthy || r.checks.some((c)=>c.status === "fail")) process.exit(1)' "${RUNNER_TEMP}/doctor-running.json"
-          docker compose --env-file "$root/.env" -f "$root/.deploy/docker-compose.generated.yml" stop app
-          bunx --bun "@notnotype/neuro-book-manager@${manager_version}" --root "$root" doctor --json > "${RUNNER_TEMP}/doctor-stopped.json"
-          node -e 'const r=require(process.argv[1]); if (!r.healthy || !r.checks.some((c)=>c.id === "service.application" && c.status === "warn")) process.exit(1)' "${RUNNER_TEMP}/doctor-stopped.json"
-          bunx --bun "@notnotype/neuro-book-manager@${manager_version}" --root "$root" start
-          for attempt in $(seq 1 60); do
-            curl --fail --silent "http://127.0.0.1:39487/api/app/version" && exit 0
-            sleep 1
-          done
-          docker compose --env-file "$root/.env" -f "$root/.deploy/docker-compose.generated.yml" logs --no-color app || true
-          exit 1
-      - name: Cleanup public GHCR instance
-        if: always()
+          bash scripts/release/verify-public-ghcr.sh \
+            "$manager_version" "$candidate_manifest" \
+            "${RUNNER_TEMP}/public-ghcr-amd64" 39487 docker
+
+  verify-public-ghcr-arm64:
+    needs: [verify-public-payload]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: candidate-assets
+      - name: Verify public GHCR on Linux ARM64 Docker
         shell: bash
         run: |
-          root="${RUNNER_TEMP}/public-ghcr-install"
-          if [[ -f "$root/.deploy/docker-compose.generated.yml" ]]; then
-            docker compose --env-file "$root/.env" -f "$root/.deploy/docker-compose.generated.yml" down --remove-orphans || true
-          fi
-          rm -rf "$root" "${RUNNER_TEMP}/neuro-book-manager"
+          set -euo pipefail
+          manager_version="$(node -p 'require("./packages/neuro-book-manager/package.json").version')"
+          candidate_manifest="$PWD/candidate-assets/release-manifest.json"
+          bash scripts/release/verify-public-ghcr.sh \
+            "$manager_version" "$candidate_manifest" \
+            "${RUNNER_TEMP}/public-ghcr-arm64" 39488 docker
 
-  verify-public-windows-update:
+  verify-public-ghcr-podman:
+    needs: [verify-public-payload]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: candidate-assets
+      - name: Install rootless Podman and Compose
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes podman podman-compose
+          podman info
+          podman compose version
+      - name: Verify public GHCR on Linux x64 rootless Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager_version="$(node -p 'require("./packages/neuro-book-manager/package.json").version')"
+          candidate_manifest="$PWD/candidate-assets/release-manifest.json"
+          bash scripts/release/verify-public-ghcr.sh \
+            "$manager_version" "$candidate_manifest" \
+            "${RUNNER_TEMP}/public-ghcr-podman" 39489 podman
+
+  verify-public-windows-data-reuse:
     needs: [verify-public-payload]
     runs-on: windows-latest
     permissions:
@@ -927,21 +948,24 @@ jobs:
         with:
           name: release-candidate
           path: candidate-assets
-      - name: Update public 0.8.6 Portable with exact npm Manager and candidate Manifest
+      - name: Reinstall Manifest v4 Portable and reuse complete 0.8.6 data
         shell: pwsh
         run: |
-          $root = Join-Path $env:RUNNER_TEMP "portable-update"
+          $baselineRoot = Join-Path $env:RUNNER_TEMP "portable-v3-baseline"
+          $root = Join-Path $env:RUNNER_TEMP "portable-v4-candidate"
           $archive = Join-Path $env:RUNNER_TEMP "portable-0.8.6.zip"
-          $manifestPath = (Resolve-Path candidate-assets/release-manifest.json).Path
-          $candidate = Get-Content -Raw $manifestPath | ConvertFrom-Json
+          $candidateArchive = (Resolve-Path candidate-assets/neuro-book-windows-x64.zip).Path
+          $candidateRelease = Get-Content -Raw candidate-assets/release-manifest.json | ConvertFrom-Json
           $managerVersion = (Get-Content -Raw packages/neuro-book-manager/package.json | ConvertFrom-Json).version
-          $channel = $candidate.channel
           $port = 39327
+          Remove-Item -LiteralPath $baselineRoot -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
           Invoke-WebRequest -Uri "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:BASELINE_RELEASE_TAG/neuro-book-windows-x64.zip" -OutFile $archive
-          Expand-Archive -LiteralPath $archive -DestinationPath $root
-          $envPath = Join-Path $root "data/.env"
-          $databasePath = Join-Path $root "data/workspace/.nbook/neuro-book.sqlite"
+          Expand-Archive -LiteralPath $archive -DestinationPath $baselineRoot
+          $baselineManifest = Get-Content -Raw (Join-Path $baselineRoot ".deploy/installation.json") | ConvertFrom-Json
+          if ($baselineManifest.schemaVersion -ne 3) { throw "Baseline不是Installation Manifest v3" }
+          $envPath = Join-Path $baselineRoot "data/.env"
+          $databasePath = Join-Path $baselineRoot "data/workspace/.nbook/neuro-book.sqlite"
           $absoluteDatabaseUrl = "file:" + $databasePath.Replace("\", "/")
           $envText = Get-Content -Raw $envPath
           $envText = $envText -replace '(?m)^DATABASE_URL=.*$', "DATABASE_URL=$absoluteDatabaseUrl"
@@ -950,7 +974,8 @@ jobs:
           Set-Content -LiteralPath $envPath -Value $envText -Encoding utf8
           $env:AUTH_ADMIN_PASSWORD = "release-update-password"
           try {
-            bunx --bun "@notnotype/neuro-book-manager@$managerVersion" --root $root admin create release-update-admin
+            $oldManager = Join-Path $baselineRoot ".runtime/bin/neuro-book.cmd"
+            & $oldManager --root $baselineRoot admin create release-update-admin
             if ($LASTEXITCODE -ne 0) { throw "0.8.6 create admin failed: $LASTEXITCODE" }
           } finally {
             Remove-Item Env:AUTH_ADMIN_PASSWORD -ErrorAction SilentlyContinue
@@ -958,17 +983,28 @@ jobs:
           $envText = Get-Content -Raw $envPath
           $envText = $envText -replace '(?m)^DATABASE_URL=.*$', 'DATABASE_URL=file:./workspace/.nbook/neuro-book.sqlite'
           Set-Content -LiteralPath $envPath -Value $envText -Encoding utf8
-          $beforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $databasePath).Hash
-          bunx --bun "@notnotype/neuro-book-manager@$managerVersion" --root $root update --channel $channel --release-manifest $manifestPath
-          if ($LASTEXITCODE -ne 0) { throw "Portable candidate update failed: $LASTEXITCODE" }
-          if ((Get-Content -Raw $envPath) -notmatch '(?m)^DATABASE_URL=file:\./workspace/\.nbook/neuro-book\.sqlite$') {
-            throw "Portable update改写了逻辑DATABASE_URL"
+          $marker = Join-Path $baselineRoot "data/workspace/.nbook/v3-data-reuse-marker.txt"
+          Set-Content -LiteralPath $marker -Value "preserve-complete-data" -Encoding ascii
+
+          Expand-Archive -LiteralPath $candidateArchive -DestinationPath $root
+          $candidateManifestPath = Join-Path $root ".deploy/installation.json"
+          $candidateManifest = Get-Content -Raw $candidateManifestPath | ConvertFrom-Json
+          if ($candidateManifest.schemaVersion -ne 4) { throw "Candidate不是Installation Manifest v4" }
+          if ($candidateManifest.managerVersion -ne $managerVersion) { throw "Candidate Manager版本与精确npm版本不一致" }
+          if ($candidateManifest.appVersion -ne $candidateRelease.version) { throw "Candidate应用版本不一致" }
+          Remove-Item -LiteralPath (Join-Path $root "data") -Recurse -Force
+          Copy-Item -LiteralPath (Join-Path $baselineRoot "data") -Destination (Join-Path $root "data") -Recurse
+          $envPath = Join-Path $root "data/.env"
+          $databasePath = Join-Path $root "data/workspace/.nbook/neuro-book.sqlite"
+          if (-not (Test-Path -LiteralPath (Join-Path $root "data/workspace/.nbook/v3-data-reuse-marker.txt") -PathType Leaf)) {
+            throw "完整data复用丢失用户标记"
           }
+          if ((Get-Content -Raw $envPath) -notmatch '(?m)^DATABASE_URL=file:\./workspace/\.nbook/neuro-book\.sqlite$') { throw "data复用没有保留逻辑DATABASE_URL" }
           if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) { throw "Portable update丢失App SQLite" }
-          if (Test-Path -LiteralPath (Join-Path $root "workspace")) { throw "Portable update创建了影子workspace" }
+          if (Test-Path -LiteralPath (Join-Path $root "workspace")) { throw "Portable重装创建了影子workspace" }
           $manager = Join-Path $root ".runtime/bin/neuro-book.cmd"
-          $stdout = Join-Path $root "data/logs/public-update.stdout.log"
-          $stderr = Join-Path $root "data/logs/public-update.stderr.log"
+          $stdout = Join-Path $root "data/logs/public-data-reuse.stdout.log"
+          $stderr = Join-Path $root "data/logs/public-data-reuse.stderr.log"
           $process = Start-Process -FilePath $manager -ArgumentList @("--root", $root, "start") -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru
           try {
             $ready = $false
@@ -989,20 +1025,22 @@ jobs:
             $body = @{username = "release-update-admin"; password = "release-update-password"} | ConvertTo-Json -Compress
             $login = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/auth/login" -Method Post -ContentType "application/json" -Body $body -WebSession $session -TimeoutSec 10
             if ($login.StatusCode -ne 200 -or $session.Cookies.Count -lt 1) { throw "Updated Portable login failed" }
+            $me = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/auth/me" -WebSession $session -TimeoutSec 10
+            if ($me.StatusCode -ne 200) { throw "Updated Portable session failed" }
           } finally {
             if (-not $process.HasExited) { taskkill /PID $process.Id /T /F | Out-Null }
           }
-          $afterHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $databasePath).Hash
-          if ($beforeHash -eq $afterHash) { Write-Host "Database content unchanged by migration; administrator data still preserved." }
-      - name: Cleanup public Portable update
+          if (-not (Test-Path -LiteralPath $marker.Replace($baselineRoot, $root) -PathType Leaf)) { throw "启动后用户标记丢失" }
+      - name: Cleanup public Portable data reuse
         if: always()
         shell: pwsh
         run: |
-          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "portable-update") -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "portable-v3-baseline") -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "portable-v4-candidate") -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "portable-0.8.6.zip") -Force -ErrorAction SilentlyContinue
 
   publish-index:
-    needs: [verify-public-ghcr-installation, verify-public-windows-update]
+    needs: [verify-public-ghcr-amd64, verify-public-ghcr-arm64, verify-public-ghcr-podman, verify-public-windows-data-reuse]
     runs-on: ubuntu-latest
     permissions:
       contents: write

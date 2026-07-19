@@ -6,6 +6,7 @@ import {Value} from "typebox/value";
 import {enableAuthentication, ensureStateFiles, loadStateEnv} from "#manager/config";
 import {runDockerApplicationCommand, startDocker} from "#manager/docker";
 import {pathExists} from "#manager/files";
+import {assertInstallationHostCompatible} from "#manager/platform";
 import {commandAvailable, run, runCapture} from "#manager/process";
 import {activateManagedTools} from "#manager/tools";
 import type {CommandInspection, InstallationManifest} from "#manager/types";
@@ -58,6 +59,7 @@ export type AttachmentMigrationPlan = {
 
 /** 启动当前安装。原生模式前台运行，Docker 模式后台运行。 */
 export async function startApplication(root: string, manifest: InstallationManifest): Promise<void> {
+    assertInstallationHostCompatible(manifest);
     const stateRoot = resolve(root, manifest.stateRoot);
     await ensureStateFiles(stateRoot, 3000, manifest.profile !== "windows-portable");
     const stateIntegrity = await inspectInstallationStateIntegrity(root, stateRoot);
@@ -161,13 +163,19 @@ export async function rollbackAttachmentMigration(
 
 /** 创建或重置管理员。 */
 export async function createAdmin(root: string, manifest: InstallationManifest, username?: string): Promise<void> {
+    assertInstallationHostCompatible(manifest);
     activateManagedTools(root, manifest.components.tools);
     const stateRoot = resolve(root, manifest.stateRoot);
     if (manifest.profile === "ghcr" || manifest.profile === "source-docker") {
         if (!manifest.containerEngine) throw new Error(`${manifest.profile} Manifest缺少Container Engine。`);
         const compose = join(root, ".deploy", "docker-compose.generated.yml");
         const composeArgs = ["compose", "--env-file", join(stateRoot, ".env"), "-f", compose];
-        await run(manifest.containerEngine, [...composeArgs, "exec", "app", "bun", ".output/server/scripts/cli/create-admin.ts", ...(username ? [username] : [])], {cwd: root});
+        const password = process.env.AUTH_ADMIN_PASSWORD;
+        const execOptions = [
+            ...(!process.stdin.isTTY ? ["-T"] : []),
+            ...(password ? ["-e", `AUTH_ADMIN_PASSWORD=${password}`] : []),
+        ];
+        await run(manifest.containerEngine, [...composeArgs, "exec", ...execOptions, "app", "bun", ".output/server/scripts/cli/create-admin.ts", ...(username ? [username] : [])], {cwd: root});
         return;
     }
     const productScript = join(root, ".output", "server", "scripts", "cli", "create-admin.ts");

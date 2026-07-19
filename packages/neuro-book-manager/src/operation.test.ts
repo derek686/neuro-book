@@ -4,7 +4,7 @@ import {join} from "node:path";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 
 import {removePath} from "#manager/files";
-import {createOperation, recoverInterruptedOperations, updateOperation} from "#manager/operation";
+import {commitOperation, createOperation, recoverInterruptedOperations, updateOperation} from "#manager/operation";
 import {parseOperationJournal} from "#manager/schema";
 import type {InstallationManifest} from "#manager/types";
 
@@ -38,6 +38,7 @@ describe("Operation recovery", () => {
     it("拒绝越界受管路径", () => {
         const journal = operationJournal();
         expect(() => parseOperationJournal({...journal, createdPaths: ["../outside"]}, "memory.json")).toThrow("Installation Root");
+        expect(() => parseOperationJournal({...journal, retiredPaths: ["../outside"]}, "memory.json")).toThrow("Installation Root");
         expect(() => parseOperationJournal({
             ...journal,
             attachmentMigration: {
@@ -47,6 +48,53 @@ describe("Operation recovery", () => {
                 sessions: attachmentSessions(1),
             },
         }, "memory.json")).toThrow("缺少nextManifest");
+    });
+
+    it("拒绝退役nextManifest仍引用的受管资产目录", () => {
+        const manifest = nativeManifest("1.0.0", "a".repeat(40));
+        expect(() => parseOperationJournal({
+            ...operationJournal(),
+            previousManifest: manifest,
+            nextManifest: manifest,
+            retiredPaths: [".runtime/manager/0.1.0"],
+        }, "memory.json")).toThrow("仍包含nextManifest引用");
+    });
+
+    it("成功提交后清理退役代次，已提交journal恢复时可幂等重试", async () => {
+        const root = await operationRoot();
+        const retired = join(root, ".runtime", "tools", "rg", "old");
+        await mkdir(retired, {recursive: true});
+        await writeFile(join(retired, "rg.exe"), "old", "utf8");
+        const journal = await createOperation({
+            id: "retired-cleanup",
+            action: "update",
+            root,
+            containerEngine: null,
+            createdPaths: [],
+            retiredPaths: [".runtime/tools/rg/old"],
+            backupRoot: join(root, ".deploy", "backups", "retired-cleanup"),
+            previousManifest: null,
+            nextManifest: null,
+        });
+
+        await commitOperation(journal);
+        await expect(stat(retired)).rejects.toMatchObject({code: "ENOENT"});
+
+        await mkdir(retired, {recursive: true});
+        const interrupted = await createOperation({
+            id: "retired-cleanup-recovery",
+            action: "update",
+            root,
+            containerEngine: null,
+            createdPaths: [],
+            retiredPaths: [".runtime/tools/rg/old"],
+            backupRoot: join(root, ".deploy", "backups", "retired-cleanup-recovery"),
+            previousManifest: null,
+            nextManifest: null,
+        });
+        await updateOperation(interrupted, "committed", {outcome: "success"});
+        await recoverInterruptedOperations(root);
+        await expect(stat(retired)).rejects.toMatchObject({code: "ENOENT"});
     });
 
     it("拒绝嵌套 Manifest 损坏的 journal", () => {

@@ -1,4 +1,4 @@
-[CmdletBinding(PositionalBinding = $false)]
+﻿[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$ManagerTag = "canary",
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -6,8 +6,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if (-not [Environment]::Is64BitOperatingSystem) {
-    throw "NeuroBook Manager v1 Stage 0 只支持 Windows x64。"
+$nativeArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+if ($nativeArchitecture -ne [System.Runtime.InteropServices.Architecture]::X64) {
+    throw "NeuroBook Manager v1 Stage 0 只支持原生 Windows x64，检测到：$nativeArchitecture。"
 }
 $bunVersion = "1.3.14"
 $localAppData = $env:LOCALAPPDATA
@@ -22,9 +23,13 @@ $bunSha256 = "0187f68d843f825a72ada4a7eca60db896ed753759a7f8252edcd31ac1bf1b9c"
 
 $cachedValid = $false
 if (Test-Path -LiteralPath $bunExe) {
-    $actualBun = (Get-FileHash -LiteralPath $bunExe -Algorithm SHA256).Hash.ToLowerInvariant()
-    $actualVersion = (& $bunExe --version 2>$null)
-    $cachedValid = $actualBun -eq $bunSha256 -and $actualVersion -eq $bunVersion
+    try {
+        $actualBun = (Get-FileHash -LiteralPath $bunExe -Algorithm SHA256).Hash.ToLowerInvariant()
+        $actualVersion = (& $bunExe --version 2>$null)
+        $cachedValid = $actualBun -eq $bunSha256 -and $actualVersion -eq $bunVersion -and $LASTEXITCODE -eq 0
+    } catch {
+        $cachedValid = $false
+    }
 }
 
 if (-not $cachedValid) {
@@ -43,6 +48,20 @@ if (-not $cachedValid) {
     } finally {
         Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+try {
+    if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) {
+        throw "Bun executable不存在：$bunExe"
+    }
+    $actualBun = (Get-FileHash -LiteralPath $bunExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualVersion = (& $bunExe --version 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $actualBun -ne $bunSha256 -or $actualVersion -ne $bunVersion) {
+        throw "Bun executable checksum或版本不匹配。"
+    }
+} catch {
+    Remove-Item -LiteralPath $cacheRoot -Recurse -Force -ErrorAction SilentlyContinue
+    throw "NeuroBook Stage 0 Bun executable校验失败：$($_.Exception.Message)"
 }
 
 $env:NEURO_BOOK_STAGE0_BUN_PATH = $bunExe

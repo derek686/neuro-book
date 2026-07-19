@@ -158,6 +158,26 @@ export const PRODUCT_PLATFORMS = [
 /** 当前支持的 Product 平台。 */
 export type ProductPlatform = typeof PRODUCT_PLATFORMS[number];
 
+/** Manager当前支持的宿主操作系统。 */
+export type HostOperatingSystem = "windows" | "linux" | "macos";
+
+/** Manager当前支持的原生与进程架构。 */
+export type HostArchitecture = "x64" | "arm64";
+
+/**
+ * 当前Manager进程所在的宿主平台。
+ *
+ * `nativeArch`描述机器原生架构，`processArch`描述当前Bun进程架构；两者不一致时
+ * 仅允许展示诊断，不允许执行安装或维护操作。
+ */
+export type HostPlatform = {
+    os: HostOperatingSystem;
+    nativeArch: HostArchitecture;
+    processArch: HostArchitecture;
+    productPlatform: ProductPlatform;
+    libc: "glibc" | null;
+};
+
 /** 安装根允许的 State Root 映射。 */
 export type StateRootPath = "." | "data";
 
@@ -350,6 +370,46 @@ export type OperationPlan = {
     steps: string[];
 };
 
+/** 安装预检中一次命令探测的用户可见结果。 */
+export type InstallCommandInspection = CommandInspection & {
+    id: "bun" | "git" | "container" | "compose";
+    command: string;
+    required: boolean;
+};
+
+/** 安装预检中已严格解析的Release摘要。 */
+export type ReleaseInspection = {
+    version: string;
+    channel: ReleaseChannel;
+    sourceRevision: string;
+    productPlatform: ProductPlatform;
+    productAvailable: boolean;
+    windowsPortableAvailable: boolean;
+    ghcrDigest: string;
+};
+
+/** 用户执行安装前看到的组件来源。 */
+export type ComponentSourceSummary = {
+    component: "manager" | "manager-runtime" | "source" | "product" | "tools";
+    source: "current-manager" | "system" | "stage0" | "managed" | "git" | "release" | "build" | "container";
+    detail: string;
+};
+
+/** Clack、非交互安装与dry-run共用的只读安装预检报告。 */
+export type InstallPreflightReport = {
+    host: HostPlatform;
+    profile: InstallProfile;
+    targetRoot: string;
+    port: number;
+    containerEngine: ContainerEngine | null;
+    commands: InstallCommandInspection[];
+    /** Release Profile严格解析成功时存在。 */
+    release?: ReleaseInspection;
+    blockers: InspectionIssue[];
+    warnings: InspectionIssue[];
+    sources: ComponentSourceSummary[];
+};
+
 export type OperationPhase = "planned" | "staged" | "validated" | "switched" | "migrated" | "healthy" | "committed";
 
 export type OperationJournal = {
@@ -361,6 +421,10 @@ export type OperationJournal = {
     /** 本次事务固定使用的容器引擎；非容器事务为null。 */
     containerEngine: ContainerEngine | null;
     createdPaths: string[];
+    /** 事务成功提交后幂等删除；失败回滚时必须保留。 */
+    retiredPaths?: string[];
+    /** Windows运行文件占用等导致清理延后时存在；不改变事务成功结果。 */
+    retiredCleanupError?: string;
     backupRoot: string;
     previousManifest: InstallationManifest | null;
     nextManifest: InstallationManifest | null;

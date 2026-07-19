@@ -4,10 +4,15 @@ import {resolve} from "node:path";
 import * as p from "@clack/prompts";
 
 import {pathExists} from "#manager/files";
-import {install, installPlan, type InstallOptions} from "#manager/installer";
+import {
+    inspectInstallEnvironment,
+    inspectInstallPreflight,
+    recommendedInstallProfile,
+} from "#manager/install-preflight";
+import {installPlan, installWithPreflight, type InstallOptions} from "#manager/installer";
 import {readManagerConfig, registerManagerInstance} from "#manager/manager-config";
-import {assertManagerPlatform, supportedProfiles} from "#manager/platform";
-import type {InstallProfile, ReleaseChannel} from "#manager/types";
+import {supportedProfiles} from "#manager/platform";
+import type {InstallPreflightReport, InstallProfile, ReleaseChannel} from "#manager/types";
 
 export type InstallGuideDefaults = {
     profile?: InstallProfile;
@@ -26,9 +31,9 @@ export async function runInstallGuide(defaults: InstallGuideDefaults = {}): Prom
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error("无参数安装向导需要交互终端；自动化安装请使用 neuro-book install --profile <profile> --yes。" );
     }
-    assertManagerPlatform();
+    let environment = await inspectInstallEnvironment(defaults.profile);
     const managerConfig = await readManagerConfig();
-    const recommended = defaults.profile ?? recommendedProfile();
+    const recommended = defaults.profile ?? recommendedInstallProfile(environment);
     const suggestedRoot = defaults.root ?? await nextInstallDirectory(
         managerConfig.preferences.installDirectory,
         managerConfig.instances.map((instance) => instance.root),
@@ -81,20 +86,7 @@ export async function runInstallGuide(defaults: InstallGuideDefaults = {}): Prom
         ],
     }));
 
-    p.note([
-        `实例：${instanceName.trim()}`,
-        `目录：${root}`,
-        `方式：${profileLabel(profile)}`,
-        `通道：${channel}`,
-        `端口：${portText}`,
-        `鉴权：${authEnabled ? "启用" : "关闭"}`,
-    ].join("\n"), "安装摘要");
-    const confirmed = await promptValue(p.confirm({message: defaults.dryRun ? "生成安装计划？" : "开始安装？", initialValue: true}));
-    if (!confirmed) {
-        p.cancel("已取消安装，没有修改目标目录。" );
-        return;
-    }
-
+    environment = await inspectInstallEnvironment(profile, environment);
     const options: InstallOptions = {
         root,
         profile,
@@ -106,15 +98,35 @@ export async function runInstallGuide(defaults: InstallGuideDefaults = {}): Prom
         dryRun: defaults.dryRun ?? false,
         managerExecutable: defaults.managerExecutable ?? fileURLToPath(import.meta.url),
     };
+    const preflight = await inspectInstallPreflight(options, environment);
+
+    p.note([
+        `实例：${instanceName.trim()}`,
+        `目录：${root}`,
+        `方式：${profileLabel(profile)}`,
+        `通道：${channel}`,
+        `端口：${portText}`,
+        `鉴权：${authEnabled ? "启用" : "关闭"}`,
+    ].join("\n"), "安装摘要");
+    p.note(formatPreflight(preflight.report), "环境预检");
+    if (preflight.report.blockers.length && !options.dryRun) {
+        throw new Error(`安装预检未通过：\n${preflight.report.blockers.map((item) => `- ${item.message}${item.remediation ? `\n  ${item.remediation}` : ""}`).join("\n")}`);
+    }
+    const confirmed = await promptValue(p.confirm({message: defaults.dryRun ? "生成安装计划？" : "开始安装？", initialValue: true}));
+    if (!confirmed) {
+        p.cancel("已取消安装，没有修改目标目录。" );
+        return;
+    }
+
     if (options.dryRun) {
-        p.note(JSON.stringify(installPlan(options), null, 4), "安装计划");
+        p.note(JSON.stringify({preflight: preflight.report, plan: installPlan(options)}, null, 4), "安装计划");
         p.outro("仅生成计划，没有修改目标目录。" );
         return;
     }
     const spinner = p.spinner();
     spinner.start("正在准备 NeuroBook 实例");
     try {
-        const manifest = await install(options);
+        const manifest = await installWithPreflight(options, preflight);
         await registerManagerInstance({
             root,
             name: instanceName,
@@ -134,11 +146,6 @@ export async function runInstallGuide(defaults: InstallGuideDefaults = {}): Prom
     }
 }
 
-/** 返回当前平台面向普通用户的推荐 Profile。 */
-export function recommendedProfile(): InstallProfile {
-    return process.platform === "win32" ? "windows-portable" : "ghcr";
-}
-
 /** 构造带场景说明的安装 Profile 选项；不支持的在当前平台禁用。 */
 function profileOptions(): Array<{value: InstallProfile; label: string; hint: string; disabled?: boolean}> {
     const supported = new Set<InstallProfile>(supportedProfiles());
@@ -156,6 +163,18 @@ function profileOptions(): Array<{value: InstallProfile; label: string; hint: st
         {value: "source-product", label: "Source Product", hint: "从 Git 源码在本机完成生产构建", disabled: !supported.has("source-product")},
         {value: "source-docker", label: "Source Docker", hint: "以 Git 源码为 context，在容器内安装和构建", disabled: !supported.has("source-docker")},
     ];
+}
+
+/** 将结构化预检压缩为Clack最终确认前的用户摘要。 */
+function formatPreflight(report: InstallPreflightReport): string {
+    return [
+        `平台：${report.host.productPlatform}（原生${report.host.nativeArch} / 进程${report.host.processArch}）`,
+        `Container Engine：${report.containerEngine ?? "不使用"}`,
+        ...report.commands.map((command) => `${command.id}：${command.available ? command.version ?? "可用" : command.required ? "缺失（阻断）" : "缺失"}`),
+        ...report.sources.map((source) => `${source.component}：${source.source} - ${source.detail}`),
+        ...report.warnings.map((warning) => `警告：${warning.message}`),
+        ...report.blockers.map((blocker) => `阻断：${blocker.message}`),
+    ].join("\n");
 }
 
 /** 为重复或已存在的默认目录生成下一个安全候选目录。 */

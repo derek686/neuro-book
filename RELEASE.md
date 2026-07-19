@@ -13,6 +13,10 @@
 - `install/update --release-manifest <local-path|https-url>`可验证候选资产；Release CI使用Manifest记录的精确npm Manager版本，并逐字节比较npm、本地构建和Portable内嵌bundle。公开Payload与GHCR/Windows A→B验证通过后才发布最终Manifest与SHA256SUMS。
 - Installation Manifest硬切v4，容器Profile持久化Docker或Podman engine；Release Manifest硬切v3并要求Windows x64、Linux x64/AArch64 glibc、macOS x64/ARM64五个平台完整且唯一。后续start/update/rollback/doctor/admin不会重新选择另一套容器engine。
 - POSIX Stage 0与managed Bun支持Linux x64/AArch64 glibc和macOS x64/ARM64，恢复执行位并验证真实版本后才提交Runtime。Release构建增加Linux ARM64与macOS双架构Product、native package和浏览器门禁，GHCR改为linux/amd64与linux/arm64。
+- Manager新增统一Host Platform Module：原生宿主架构、当前Bun进程架构和Product平台只解析一次。Windows ARM64、Linux musl、Rosetta及其他跨架构进程会在安装、导入、doctor、start、update和Runtime/Tool维护前明确失败，不会执行错误平台二进制。
+- Bun、ripgrep与PortableGit改由统一Managed Asset Repository物化。只有当前有效Manifest能够证明archive、source URL、全部checksum与真实版本的不可变目录才可复用；Fresh Install或损坏目录会先在staging验证并提交新代次，Manifest与wrapper成功切换后才清理旧目录，不会原地覆盖运行文件。
+- Clack、`install --yes`与`install --dry-run --json`现在消费同一Install Preflight，统一报告Git、Docker/Podman、Compose、端口、目标目录、Release和组件来源；`--yes`不能跳过blocker。
+- POSIX Stage 0无参数管道会从`/dev/tty`恢复交互；无TTY自动化必须显式传`--profile ... --yes`。Windows Stage 0按原生OS架构拒绝ARM64，并在首次解压后再次验证Bun checksum与版本。
 
 ### 迁移指南
 
@@ -27,13 +31,13 @@
 
 ### 当前验证
 
-- Manager串行完整回归23文件109项通过，另有1文件/2项按平台跳过；Manager/Runtime/根typecheck、5文件pack审计与完整Nuxt/Product build通过。
+- Manager最终完整回归26文件127项通过，另有1文件/2项按平台跳过；Manager pack审计为5个文件、约0.37 MiB，Manager与根typecheck、Nuxt build及Product后处理通过。新增回归确认损坏同版本Runtime/Tool在下载、验证或Journal记账失败时保留旧目录，事务成功后才幂等清理退役代次。
 - SQLite/Prisma/Login聚焦4文件20项通过；包含真实PrismaLibSql连接、Windows绝对URL、相对越界、外部数据库和鉴权登录查询。
-- Release workflow YAML解析通过；公开`0.8.6`基线Portable资产仍可下载，已作为未来`0.8.6 → 候选版本`门禁输入。
+- Release workflow YAML解析、GHCR脚本`bash -n`与Windows PowerShell 5/7 Parser通过。首次Manifest v4公开门禁已改为`0.8.6`在旧根创建数据后，只把完整`data/`复制进新候选Installation Root；不再尝试让v4 Manager直接update v3 Manifest。
 - 五平台资产映射、宿主交叉包装拒绝、Docker/Podman固定engine、rootless Podman UID、POSIX Stage 0与Managed Bun执行位的本地聚焦回归已通过；集成分支[Product Platform Checks 29643196339](https://github.com/notnotype/neuro-book/actions/runs/29643196339)进一步完成Linux ARM64 glibc、macOS x64与macOS ARM64原生Product构建和运行门禁。
 - Windows x64 Product归档从当前`.output`成功写入44,998个文件条目；其他四个平台不做交叉包装，由对应原生runner生成和验收。
 - SSH Arch clean checkout完成Manager/SQLite回归与真实47阶段Docker build；分离State Root容器完成管理员创建、登录、session查询和SQLite位置断言，测试容器、镜像和目录已清理。
-- 尚未发布Manager或应用版本，也未执行人工浏览器验收。Apple Silicon Docker Desktop/rootless Podman实机链本次明确豁免，仍保留为Task 105后续证据。
+- 公开GHCR门禁已拆为Linux x64 Docker、Linux ARM64 Docker与Linux x64 rootless Podman，统一覆盖migration、admin、login、restart、doctor和Operation恢复；这些workflow尚未执行。尚未发布Manager或应用版本，也未执行人工浏览器验收。Apple Silicon Docker Desktop/rootless Podman实机链本次明确豁免，仍保留为Task 105后续证据。
 
 ## 0.8.6-canary - 2026-07-17
 
