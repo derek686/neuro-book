@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 
-import {runBun} from "#manager/process";
+import {runBun, runCapture} from "#manager/process";
 
 describe("Bun子进程适配器", () => {
     it("完整转发包含空格的参数", async () => {
@@ -14,5 +14,12 @@ describe("Bun子进程适配器", () => {
 
     it("保留子进程非零退出语义", async () => {
         await expect(runBun(process.execPath, ["-e", "process.exit(7)"], {stdio: "ignore"})).rejects.toThrow("退出码 7");
+    });
+
+    it("等待短命令stdout完全关闭后再返回", async () => {
+        await expect(runCapture(process.execPath, [
+            "-e",
+            "process.stdout.write('1.3.14')",
+        ])).resolves.toBe("1.3.14");
     });
 });

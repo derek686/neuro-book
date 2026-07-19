@@ -1,6 +1,6 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中，应用发布进行中。Manager `0.1.0-canary.22`已公开并通过npm精确bunx；[`v0.8.10-canary.20260719.153805Z.13c85b2c`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.10-canary.20260719.153805Z.13c85b2c)已创建，workflow `29693247437`后台运行。`0.8.9`因Windows Portable的Bun ZIP目录条目适配失败而未形成完整资产，workflow `29691602413`已取消；`0.8.6`仍是最新已确认含资产版本。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；公开多架构资产、Canary A数据复用与Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
+> 当前状态：实现中，应用发布进行中。Manager `0.1.0-canary.22`已公开；`v0.8.10` workflow `29693247437`在Windows/macOS x64原生Manager门禁失败后取消，没有形成最终索引。生产子进程捕获与真实集成测试预算已修复，下一顺序为Manager `.23`后发布应用`0.8.11`并持续验收。`0.8.6`仍是最新已确认含资产版本。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；公开多架构资产、Canary A数据复用与Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
 
 ## 2026-07-19：Operation Journal v3与资产ownership收口
 
@@ -868,3 +868,10 @@ uninstall
 - 当前最大剩余耗时是amd64 runner通过QEMU重新编译ARM64 Nuxt Product：本次取消前超过18分钟，而原生ARM64 runner同类Nuxt build约94秒。后续优化应让Container Packaging Adapter直接消费原生Linux Product Artifact并只做OCI封装/manifest merge；本轮不仓促改变镜像字节来源和发布事务。
 - 验证：Archive Adapter 2项、Manager完整29文件/143项（另1文件/2项按平台跳过）、Release资产/checksum 2文件/8项通过。下一发布顺序固定为Manager `.22`公开后再创建应用`0.8.10` patch canary；不复用失败tag，不等待应用Release workflow。
 - 实际发布：Manager `.22` workflow `29693189437`全绿，npm精确版本、`canary`和真实bunx均返回`.22`；应用`v0.8.10-canary.20260719.153805Z.13c85b2c`随后创建，workflow `29693247437`按`--no-watch`约定在后台运行。本轮没有把尚未完成的Product/GHCR/最终索引门禁写成通过。
+
+### 2026-07-20：`0.8.10`原生Manager门禁失败
+
+- Windows失败于`process.test.ts`：真实PowerShell/Bun冷启动在并行runner负载下超过Vitest默认5秒。macOS x64失败于`instance-import.test.ts`：`runCapture()`监听`exit`后立即返回，而该事件不保证stdout已经关闭，短命令`bun --version`因此读到空字符串。
+- 两者不是Portable归档修复回归。Linux preflight、Linux x64/ARM64 Product和macOS ARM64 Product均已通过；workflow在最终索引前被阻断并取消，剩余OCI构建也随之停止。
+- 生产修复将捕获完成点改为`close`，保证stdout/stderr完整；测试基础设施统一20秒预算覆盖真实Git、PowerShell和子进程冷启动，job级硬超时继续负责识别真正挂死。
+- 本地Manager typecheck通过，完整29文件/144项连续两轮通过（另1文件/2项按平台跳过），Release资产/checksum 8项通过。下一版本为Manager `.23`和应用`0.8.11`，不复用`.22/.10`的bundle或tag。

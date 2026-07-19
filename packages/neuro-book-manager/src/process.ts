@@ -68,7 +68,9 @@ export async function runCapture(command: string, args: string[], options: Omit<
         child.stdout.on("data", (chunk: string) => stdout += chunk);
         child.stderr.on("data", (chunk: string) => stderr += chunk);
         child.on("error", rejectPromise);
-        child.on("exit", (code, signal) => {
+        // `exit`早于stdio关闭；短命令在macOS上可能先退出、后派发最后一段stdout。
+        // 只有`close`能够保证stdout/stderr已完整消费，版本检查才能稳定读取输出。
+        child.on("close", (code, signal) => {
             if (signal || code !== 0) {
                 rejectPromise(new Error(stderr.trim() || `${command} 执行失败，退出码 ${code ?? signal ?? "unknown"}`));
                 return;

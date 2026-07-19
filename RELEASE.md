@@ -1,10 +1,26 @@
 # Release Notes
 
+## 0.8.11-canary - 2026-07-20
+
+本次patch修复`0.8.10`新增原生平台Manager门禁后暴露的两个子进程测试问题。该版本需要`@notnotype/neuro-book-manager@0.1.0-canary.23`或更高版本。
+
+### 修复
+
+- Manager子进程输出捕获改为等待`close`事件，确保stdout/stderr完全关闭后再返回。macOS短命令`bun --version`不再因`exit`早于最后一段stdout而偶发得到空版本。
+- Manager测试的真实Git、PowerShell和子进程集成用例统一使用20秒预算，避免共享runner负载把正常冷启动误判为5秒挂死；Release job自身的45/60分钟上限保持不变。
+- 新增短命令stdout完整性回归，并连续两次运行完整Manager suite验证进程与Git用例不再出现5秒随机失败。
+
+### 迁移指南
+
+- `0.8.10`没有形成最终Release索引，不要安装其不完整资产；已经使用`0.8.6`的用户继续等待本版本完整资产。
+- 本次不改变数据库、Workspace Root、Installation Manifest或用户配置。Windows Portable迁移仍是备份完整`data/`，将其带到新解压的Installation Root，不复制旧`.runtime/.deploy/.output`。
+- 不要通过删除平台测试、跳过版本检查或放宽进程错误处理规避该问题。
+
 ## 0.8.10-canary - 2026-07-19
 
 本次patch修复`0.8.9`候选Windows Portable在组装内置Bun时失败的问题，并收口Release Actions的前置门禁、重复测试和旧canary资源占用。该版本需要`@notnotype/neuro-book-manager@0.1.0-canary.22`或更高版本。
 
-公开prerelease：[`v0.8.10-canary.20260719.153805Z.13c85b2c`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.10-canary.20260719.153805Z.13c85b2c)。Release workflow [`29693247437`](https://github.com/notnotype/neuro-book/actions/runs/29693247437)已启动；按发布约定未等待Actions，最终资产与公开Manifest仍以workflow结果为准。
+公开prerelease：[`v0.8.10-canary.20260719.153805Z.13c85b2c`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.10-canary.20260719.153805Z.13c85b2c)。Release workflow [`29693247437`](https://github.com/notnotype/neuro-book/actions/runs/29693247437)在Windows/macOS x64原生Manager门禁失败后取消，没有形成最终Release索引。
 
 ### 修复与改进
 
