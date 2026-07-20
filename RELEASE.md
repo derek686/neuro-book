@@ -1,8 +1,26 @@
 # Release Notes
 
+## 0.8.15-canary - 2026-07-20
+
+本次patch修复rootless Podman使用`podman-compose 1.0.6`停止应用时意外删除容器的问题。该版本需要`@notnotype/neuro-book-manager@0.1.0-canary.25`或更高版本。
+
+### 修复
+
+- Container Engine Adapter在Docker上继续使用`compose stop app`；Podman则通过Compose解析唯一app容器ID，再调用原生`podman stop --time 10`。停止后的容器会保留，doctor、restart和Operation恢复可读取同一真实状态。
+- Podman容器ID必须是唯一的12–64位十六进制ID；空结果按“尚未创建”处理，多容器或非法输出fail closed，避免停止错误目标。
+- 公开GHCR链使用同一Podman停止语义，继续覆盖停止态doctor、重启、登录和planned Operation恢复。
+
+### 迁移指南
+
+- `0.8.14`的Docker x64/ARM64公开GHCR链已经通过，证明Product SIGTERM转发生效；rootless Podman因旧provider的stop即rm行为失败，最终索引仍未发布。
+- 已运行`0.8.14` Podman候选的用户不需要迁移State Root。若容器已被旧stop删除，后续`neuro-book start`会按固定Manifest与Compose重新创建；不要删除Workspace Root或SQLite。
+- 本次不修改数据库、State Root、Installation Manifest或Compose schema。
+
 ## 0.8.14-canary - 2026-07-20
 
 本次patch修复Product容器在Docker/Podman中无法于默认10秒停止窗口内响应SIGTERM的问题。继续使用已公开的`@notnotype/neuro-book-manager@0.1.0-canary.24`。
+
+公开prerelease：[`v0.8.14-canary.20260720.061150Z.63b609be`](https://github.com/notnotype/neuro-book/releases/tag/v0.8.14-canary.20260720.061150Z.63b609be)。Release workflow [`29720984170`](https://github.com/notnotype/neuro-book/actions/runs/29720984170)在瞬时ARM64依赖tarball解压失败后原地重跑成功；Docker x64/ARM64 GHCR链通过，rootless Podman暴露`podman-compose 1.0.6 stop`会删除容器，最终索引未发布。
 
 ### 修复
 

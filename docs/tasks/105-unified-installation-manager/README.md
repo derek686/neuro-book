@@ -1,6 +1,15 @@
 # 105 - 统一安装目录与 NeuroBook Manager
 
-> 当前状态：实现中，应用发布进行中。`v0.8.13`确认Podman provider固定生效，并通过五平台Product、双架构OCI、Windows/Linux候选、公开payload及Windows `0.8.6`完整`data/`复用；三条GHCR链共同暴露Product launcher未把PID 1的SIGTERM转发给Nitro子进程，最终索引未发布。信号链修复进入应用`0.8.14`，继续使用已公开Manager `0.1.0-canary.24`。`0.8.6`仍是最新已确认含完整索引版本。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；Canary A公开多架构索引、Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
+> 当前状态：实现中，应用发布进行中。`v0.8.14`的Linux preflight真实SIGTERM回归与Docker x64/ARM64公开GHCR链通过；rootless Podman暴露`podman-compose 1.0.6 stop`会删除容器。Podman Adapter改用“Compose解析唯一ID + 原生stop”并进入Manager `0.1.0-canary.25`/应用`0.8.15`，最终索引尚未发布。`0.8.6`仍是最新已确认含完整索引版本。当前源码协议为Installation Manifest v4、Release Manifest v3与Operation Journal v3；Canary A公开多架构索引、Canary A→B事务更新仍需完成。Apple Silicon Docker Desktop/rootless Podman实机门禁继续豁免，但不得标记为已验证。
+
+## 2026-07-20：`0.8.14` rootless Podman停止语义
+
+- Release workflow [`29720984170`](https://github.com/notnotype/neuro-book/actions/runs/29720984170)的Linux preflight真实父子进程SIGTERM测试通过；首次OCI因ARM64 QEMU下载`effect` tarball解压失败，原地rerun后越过同点并完成构建，未创建无意义新版本。
+- Docker x64与ARM64公开GHCR链完整通过，证明Product launcher能在默认10秒窗口内停止，停机doctor、restart、登录和Operation恢复合同成立。
+- rootless Podman在0.6秒内完成SIGTERM停止，但`podman-compose 1.0.6 stop app`随后执行`podman rm`。这不是Product信号问题，而是provider命令语义与Manager所需“停止但保留容器”不一致。
+- Container Engine Adapter现明确分流：Docker使用Compose stop；Podman使用Compose `ps --all --quiet app`解析唯一容器ID，再执行原生`podman stop --time 10`。非法或多ID输出拒绝，空ID保持幂等。
+- 公开GHCR脚本同步使用同一Adapter语义并增加合同断言。Manager bundle发生变化，必须先发布`.25`，应用patch再精确引用；不能复用`.24`同版本覆盖。
+- 与原计划差异：SIGTERM修复已由Docker双架构公开链验证，但Canary A仍因Podman失败没有最终Manifest/SHA256SUMS，Task 105继续保持实现中。
 
 ## 2026-07-20：`0.8.13` Product容器SIGTERM链路
 

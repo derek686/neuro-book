@@ -61,7 +61,13 @@ curl --fail --silent --show-error -b "$cookie" "$base/api/auth/me" >/dev/null
 manager --root "$root" doctor --json > "${root}-doctor-running.json"
 node -e 'const r=require(process.argv[1]); if (!r.healthy || r.checks.some((c)=>c.status === "fail")) process.exit(1)' "${root}-doctor-running.json"
 
-"$engine" compose --env-file "$root/.env" -f "$root/.deploy/docker-compose.generated.yml" stop app
+if [[ "$engine" == "podman" ]]; then
+    container_id="$("$engine" compose --env-file "$root/.env" -f "$root/.deploy/docker-compose.generated.yml" ps --all --quiet app)"
+    [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] || { echo "Podman app容器ID非法：$container_id" >&2; exit 1; }
+    "$engine" stop --time 10 "$container_id"
+else
+    "$engine" compose --env-file "$root/.env" -f "$root/.deploy/docker-compose.generated.yml" stop app
+fi
 manager --root "$root" doctor --json > "${root}-doctor-stopped.json"
 node -e 'const r=require(process.argv[1]); if (!r.healthy || !r.checks.some((c)=>c.id === "service.application" && c.status === "warn")) { console.error(JSON.stringify({service:r.service,failures:r.checks.filter((c)=>c.status === "fail")}, null, 2)); process.exit(1); }' "${root}-doctor-stopped.json"
 manager --root "$root" start

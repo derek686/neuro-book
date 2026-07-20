@@ -210,7 +210,23 @@ export async function inspectDockerApplication(engine: ContainerEngine, root: st
 
 /** 在切换Compose或备份SQLite前停止受管app容器。 */
 export async function stopDocker(engine: ContainerEngine, root: string, stateRoot: string): Promise<void> {
-    await run(engine, [...composeArgs(root, stateRoot), "stop", "app"], containerComposeOptions(engine, root));
+    if (engine === "docker") {
+        await run(engine, [...composeArgs(root, stateRoot), "stop", "app"], containerComposeOptions(engine, root));
+        return;
+    }
+    const containerId = (await runCapture(engine, [
+        ...composeArgs(root, stateRoot),
+        "ps",
+        "--all",
+        "--quiet",
+        "app",
+    ], containerComposeOptions(engine, root))).trim();
+    if (!containerId) return;
+    if (!/^[a-f0-9]{12,64}$/u.test(containerId)) {
+        throw new Error(`Podman Compose返回了非法app容器ID：${containerId}`);
+    }
+    // podman-compose 1.0.6的`stop`会连带rm；原生stop保留容器供doctor、restart和事务恢复。
+    await run(engine, ["stop", "--time", "10", containerId], {cwd: root});
 }
 
 /** 回滚或Fresh Install失败时移除当前Compose创建的容器与网络。 */

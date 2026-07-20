@@ -5,7 +5,7 @@ import {join} from "node:path";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {parse} from "yaml";
 
-import {resolveContainerEngine, runDockerApplicationCommand, writeDockerCompose} from "#manager/docker";
+import {resolveContainerEngine, runDockerApplicationCommand, stopDocker, writeDockerCompose} from "#manager/docker";
 
 const processCommands = vi.hoisted(() => ({
     available: vi.fn(),
@@ -132,6 +132,45 @@ describe("Docker Compose部署合同", () => {
             cwd: root,
             env: expect.objectContaining({PODMAN_COMPOSE_PROVIDER: "podman-compose"}),
         });
+    });
+
+    it("Podman停止app时保留容器供doctor与恢复使用", async () => {
+        const root = "/tmp/neuro-book";
+        const stateRoot = "/tmp/neuro-book-state";
+        const containerId = "a".repeat(64);
+        processCommands.capture.mockResolvedValue(containerId);
+
+        await stopDocker("podman", root, stateRoot);
+
+        expect(processCommands.capture).toHaveBeenCalledWith("podman", [
+            "compose",
+            "--env-file",
+            join(stateRoot, ".env"),
+            "-f",
+            join(root, ".deploy", "docker-compose.generated.yml"),
+            "ps",
+            "--all",
+            "--quiet",
+            "app",
+        ], {
+            cwd: root,
+            env: expect.objectContaining({PODMAN_COMPOSE_PROVIDER: "podman-compose"}),
+        });
+        expect(processCommands.run).toHaveBeenCalledWith("podman", [
+            "stop",
+            "--time",
+            "10",
+            containerId,
+        ], {cwd: root});
+        expect(processCommands.run).not.toHaveBeenCalledWith("podman", expect.arrayContaining(["compose", "stop"]), expect.anything());
+    });
+
+    it("Podman停止app时拒绝多容器或非ID输出", async () => {
+        processCommands.capture.mockResolvedValue("container-one\ncontainer-two\n");
+
+        await expect(stopDocker("podman", "/tmp/neuro-book", "/tmp/neuro-book-state"))
+            .rejects.toThrow("非法app容器ID");
+        expect(processCommands.run).not.toHaveBeenCalled();
     });
 
     it("一次性应用命令拒绝空命令", async () => {
